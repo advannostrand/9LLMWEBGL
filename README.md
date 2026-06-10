@@ -46,6 +46,29 @@ The most surprising finding isn't that Fable 5 won. It's that Opus 4.8 also ship
 
 ---
 
+## What it actually looks like
+
+**The two that worked:**
+
+<table>
+<tr>
+<td align="center"><b>Fable 5</b> — 671 pts · 2,220 tets · 3,395 springs</td>
+<td align="center"><b>Opus 4.8</b> — XPBD + shape matching · PCF shadows</td>
+</tr>
+<tr>
+<td><img src="./media/FABLE__2_.gif" alt="Fable 5 working simulation" width="100%"/></td>
+<td><img src="./media/OPUS.gif" alt="Opus 4.8 working simulation" width="100%"/></td>
+</tr>
+</table>
+
+**Everyone else** (representative — Gemini Pro, 1,121 lines, FPS: 0, Nodes: 0, Tetras: 0):
+
+<img src="./media/GEMNI.gif" alt="Gemini Pro shell failure" width="60%"/>
+
+> UI rendered correctly. Sliders, presets, FPS counter — all there. The simulation underneath was completely dead. This is the most common failure pattern in the dataset.
+
+---
+
 ## Try the outputs
 
 Single HTML files. Download and open in any WebGL2 browser. No server needed.
@@ -157,6 +180,10 @@ Full writeup with methodology, per-model analysis, reasoning trace breakdowns, f
 one-shot-physics-benchmark/
 ├── README.md
 ├── PROMPT.md
+├── media/
+│   ├── FABLE__2_.gif          ← embed in README
+│   ├── OPUS.gif               ← embed in README
+│   └── GEMNI.gif              ← embed in README
 ├── outputs/
 │   ├── Fable_5.html
 │   ├── Opus.html
