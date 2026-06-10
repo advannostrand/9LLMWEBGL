@@ -210,7 +210,7 @@ one-shot-physics-benchmark/
 
 <div align="center">
 
-**Adam Van Nostrand** · Independent Researcher · Columbia, SC · Blencowe IT
+**Adam Van Nostrand** · Independent Researcher · Columbia, SC
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=flat-square&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/adam-van-nostrand-5a603424b/)
 [![GitHub](https://img.shields.io/badge/GitHub-advannostrand%2F9LLMWEBGL-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/advannostrand/9LLMWEBGL)
