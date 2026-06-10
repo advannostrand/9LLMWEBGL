@@ -1,0 +1,1122 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vanilla WebGL2 Soft Body Physics</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: #111;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff; user-select: none;
+        }
+        canvas {
+            display: block; width: 100%; height: 100%;
+            touch-action: none; /* for smooth pointer events */
+        }
+        #ui-container {
+            position: absolute; top: 15px; right: 15px;
+            width: 320px; background: rgba(20, 20, 25, 0.85);
+            backdrop-filter: blur(10px); border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 20px; box-sizing: border-box;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            overflow-y: auto; max-height: calc(100vh - 30px);
+        }
+        h1 { margin: 0 0 15px 0; font-size: 1.2rem; font-weight: 600; text-align: center; color: #00ffcc; text-transform: uppercase; letter-spacing: 1px;}
+        .control-group { margin-bottom: 15px; }
+        .control-group label { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 5px; color: #aaa; }
+        .control-group input[type=range] { width: 100%; cursor: pointer; accent-color: #00ffcc; }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; }
+        button {
+            flex: 1 1 calc(50% - 4px); background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2); color: #fff;
+            padding: 8px 10px; border-radius: 6px; cursor: pointer;
+            font-size: 0.85rem; transition: all 0.2s;
+        }
+        button:hover { background: #00ffcc; color: #000; border-color: #00ffcc; box-shadow: 0 0 10px rgba(0,255,204,0.4); }
+        button:active { transform: scale(0.95); }
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 0.85rem; color: #aaa; }
+        input[type="checkbox"] { accent-color: #00ffcc; width: 16px; height: 16px; cursor: pointer; }
+        #stats { position: absolute; top: 15px; left: 15px; background: rgba(0,0,0,0.6); padding: 10px 15px; border-radius: 8px; font-family: monospace; font-size: 1rem; color: #00ffcc; pointer-events: none;}
+        #instructions { position: absolute; bottom: 20px; width: 100%; text-align: center; font-size: 0.9rem; color: rgba(255,255,255,0.6); pointer-events: none; }
+    </style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    
+    <div id="stats">FPS: 0<br>Nodes: 0<br>Tetras: 0</div>
+    
+    <div id="instructions">
+        Left Click + Drag Background to Rotate | Scroll to Zoom<br>
+        Left Click + Drag Object to Apply Force
+    </div>
+
+    <div id="ui-container">
+        <h1>Physics Sandbox</h1>
+        
+        <div class="control-group">
+            <label><span>Gravity</span> <span id="val-gravity">-9.8</span></label>
+            <input type="range" id="gravity" min="-30" max="10" step="0.1" value="-9.8">
+        </div>
+        <div class="control-group">
+            <label><span>Stiffness</span> <span id="val-stiffness">1.0</span></label>
+            <input type="range" id="stiffness" min="0.1" max="2.0" step="0.05" value="1.0">
+        </div>
+        <div class="control-group">
+            <label><span>Damping</span> <span id="val-damping">0.05</span></label>
+            <input type="range" id="damping" min="0" max="0.2" step="0.01" value="0.05">
+        </div>
+        <div class="control-group">
+            <label><span>Sim Speed</span> <span id="val-speed">1.0</span></label>
+            <input type="range" id="speed" min="0.1" max="2" step="0.1" value="1.0">
+        </div>
+
+        <div class="toggle-row">
+            <span>Show Wireframe</span>
+            <input type="checkbox" id="wireframe">
+        </div>
+        <div class="toggle-row">
+            <span>Pause Simulation</span>
+            <input type="checkbox" id="pause">
+        </div>
+
+        <div style="margin-top: 20px; font-size: 0.85rem; color: #aaa; margin-bottom: 5px;">Presets</div>
+        <div class="btn-group">
+            <button id="btn-cube">Jelly Cube</button>
+            <button id="btn-sphere">Soft Sphere</button>
+            <button id="btn-stack">Rigid-ish Stack</button>
+            <button id="btn-chain">Tetra Chain</button>
+        </div>
+        <button id="btn-reset" style="width: 100%; background: rgba(255,50,50,0.2); border-color: rgba(255,50,50,0.4); color: #ff8888;">Reset / Clear</button>
+    </div>
+
+<script>
+/**
+ * VANILLA WEBGL2 HIGH-PERFORMANCE SOFT BODY PHYSICS ENGINE
+ * Features: Position-Based Dynamics (PBD), Tetrahedral Volume Mesh Generation, 
+ * Shadow Mapping, Mouse Interaction (Raycasting), Instanced Particle System.
+ */
+
+/* =========================================================================================
+   MATH UTILITIES (Minimal Matrix & Vector library for zero dependencies)
+========================================================================================= */
+const MathUtils = {
+    normalize: (out, a) => {
+        let x = a[0], y = a[1], z = a[2];
+        let len = x * x + y * y + z * z;
+        if (len > 0) { len = 1 / Math.sqrt(len); out[0] = x * len; out[1] = y * len; out[2] = z * len; }
+        return out;
+    },
+    cross: (out, a, b) => {
+        let ax = a[0], ay = a[1], az = a[2], bx = b[0], by = b[1], bz = b[2];
+        out[0] = ay * bz - az * by; out[1] = az * bx - ax * bz; out[2] = ax * by - ay * bx;
+        return out;
+    },
+    dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+    sub: (out, a, b) => { out[0] = a[0] - b[0]; out[1] = a[1] - b[1]; out[2] = a[2] - b[2]; return out; },
+    add: (out, a, b) => { out[0] = a[0] + b[0]; out[1] = a[1] + b[1]; out[2] = a[2] + b[2]; return out; },
+    mat4Identity: (out) => {
+        out.fill(0); out[0] = 1; out[5] = 1; out[10] = 1; out[15] = 1; return out;
+    },
+    mat4Perspective: (out, fovy, aspect, near, far) => {
+        let f = 1.0 / Math.tan(fovy / 2), nf = 1 / (near - far);
+        out.fill(0); out[0] = f / aspect; out[5] = f; out[10] = (far + near) * nf;
+        out[11] = -1; out[14] = (2 * far * near) * nf; return out;
+    },
+    mat4Ortho: (out, left, right, bottom, top, near, far) => {
+        let lr = 1 / (left - right), bt = 1 / (bottom - top), nf = 1 / (near - far);
+        out.fill(0); out[0] = -2 * lr; out[5] = -2 * bt; out[10] = 2 * nf;
+        out[12] = (left + right) * lr; out[13] = (top + bottom) * bt; out[14] = (far + near) * nf; out[15] = 1; return out;
+    },
+    mat4LookAt: (out, eye, center, up) => {
+        let x0, x1, x2, y0, y1, y2, z0, z1, z2, len;
+        let eyex = eye[0], eyey = eye[1], eyez = eye[2];
+        let upx = up[0], upy = up[1], upz = up[2];
+        let cx = center[0], cy = center[1], cz = center[2];
+        z0 = eyex - cx; z1 = eyey - cy; z2 = eyez - cz;
+        len = z0 * z0 + z1 * z1 + z2 * z2;
+        if (len > 0) { len = 1 / Math.sqrt(len); z0 *= len; z1 *= len; z2 *= len; }
+        x0 = upy * z2 - upz * z1; x1 = upz * z0 - upx * z2; x2 = upx * z1 - upy * z0;
+        len = x0 * x0 + x1 * x1 + x2 * x2;
+        if (len > 0) { len = 1 / Math.sqrt(len); x0 *= len; x1 *= len; x2 *= len; }
+        y0 = z1 * x2 - z2 * x1; y1 = z2 * x0 - z0 * x2; y2 = z0 * x1 - z1 * x0;
+        out[0] = x0; out[1] = y0; out[2] = z0; out[3] = 0;
+        out[4] = x1; out[5] = y1; out[6] = z1; out[7] = 0;
+        out[8] = x2; out[9] = y2; out[10] = z2; out[11] = 0;
+        out[12] = -(x0 * eyex + x1 * eyey + x2 * eyez);
+        out[13] = -(y0 * eyex + y1 * eyey + y2 * eyez);
+        out[14] = -(z0 * eyex + z1 * eyey + z2 * eyez); out[15] = 1;
+        return out;
+    },
+    mat4Multiply: (out, a, b) => {
+        let a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3], a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+        let a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11], a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+        let b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
+        out[0] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30; out[1] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31; out[2] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32; out[3] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+        b0 = b[4]; b1 = b[5]; b2 = b[6]; b3 = b[7];
+        out[4] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30; out[5] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31; out[6] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32; out[7] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+        b0 = b[8]; b1 = b[9]; b2 = b[10]; b3 = b[11];
+        out[8] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30; out[9] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31; out[10] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32; out[11] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+        b0 = b[12]; b1 = b[13]; b2 = b[14]; b3 = b[15];
+        out[12] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30; out[13] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31; out[14] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32; out[15] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+        return out;
+    },
+    mat4Invert: (out, a) => {
+        let a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3], a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+        let a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11], a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+        let b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10, b02 = a00 * a13 - a03 * a10, b03 = a01 * a12 - a02 * a11;
+        let b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12, b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30;
+        let b08 = a20 * a33 - a23 * a30, b09 = a21 * a32 - a22 * a31, b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+        let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+        if (!det) return null;
+        det = 1.0 / det;
+        out[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det; out[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+        out[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det; out[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+        out[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det; out[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+        out[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det; out[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+        out[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det; out[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+        out[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det; out[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+        out[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det; out[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+        out[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det; out[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+        return out;
+    },
+    transformMat4: (out, a, m) => {
+        let x = a[0], y = a[1], z = a[2], w = m[3] * x + m[7] * y + m[11] * z + m[15];
+        w = w || 1.0;
+        out[0] = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
+        out[1] = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+        out[2] = (m[2] * x + m[6] * y + m[10] * z + m[14]) / w;
+        return out;
+    }
+};
+
+/* =========================================================================================
+   SHADER SOURCE CODE
+========================================================================================= */
+
+const SHADERS = {
+    mainVertex: `#version 300 es
+        layout(location=0) in vec3 a_position;
+        layout(location=1) in vec3 a_normal;
+        layout(location=2) in vec3 a_color;
+
+        uniform mat4 u_modelViewMatrix;
+        uniform mat4 u_projectionMatrix;
+        uniform mat4 u_lightMVP;
+
+        out vec3 v_normal;
+        out vec3 v_viewPos;
+        out vec3 v_color;
+        out vec4 v_shadowCoord;
+
+        void main() {
+            vec4 pos = vec4(a_position, 1.0);
+            gl_Position = u_projectionMatrix * u_modelViewMatrix * pos;
+            v_normal = mat3(u_modelViewMatrix) * a_normal;
+            v_viewPos = -(u_modelViewMatrix * pos).xyz;
+            v_color = a_color;
+            // Bias matrix to map -1..1 to 0..1 for shadow map
+            const mat4 biasMat = mat4(
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 0.5, 0.0,
+                0.5, 0.5, 0.5, 1.0
+            );
+            v_shadowCoord = biasMat * u_lightMVP * pos;
+        }
+    `,
+    mainFragment: `#version 300 es
+        precision highp float;
+        
+        in vec3 v_normal;
+        in vec3 v_viewPos;
+        in vec3 v_color;
+        in vec4 v_shadowCoord;
+        
+        uniform vec3 u_lightDir;
+        uniform sampler2D u_shadowMap;
+        
+        out vec4 FragColor;
+
+        float shadowCalculation(vec4 fragPosLightSpace) {
+            vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+            if(projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0) return 0.0;
+            
+            float currentDepth = projCoords.z;
+            float bias = max(0.005 * (1.0 - dot(normalize(v_normal), u_lightDir)), 0.001);
+            
+            float shadow = 0.0;
+            vec2 texelSize = 1.0 / vec2(textureSize(u_shadowMap, 0));
+            // PCF filtering
+            for(int x = -1; x <= 1; ++x) {
+                for(int y = -1; y <= 1; ++y) {
+                    float pcfDepth = texture(u_shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+                    shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
+                }
+            }
+            return shadow / 9.0;
+        }
+
+        void main() {
+            vec3 normal = normalize(v_normal);
+            vec3 lightDir = normalize(u_lightDir);
+            vec3 viewDir = normalize(v_viewPos);
+            
+            // Ambient
+            vec3 ambient = 0.2 * v_color;
+            
+            // Diffuse
+            float diff = max(dot(normal, lightDir), 0.0);
+            vec3 diffuse = diff * v_color;
+            
+            // Specular (Blinn-Phong)
+            vec3 halfDir = normalize(lightDir + viewDir);
+            float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
+            vec3 specular = vec3(0.5) * spec;
+
+            float shadow = shadowCalculation(v_shadowCoord);
+            vec3 lighting = ambient + (1.0 - shadow) * (diffuse + specular);
+            
+            // Simple rim lighting for organic feel
+            float rim = 1.0 - max(dot(viewDir, normal), 0.0);
+            rim = smoothstep(0.6, 1.0, rim);
+            lighting += vec3(rim * 0.3);
+
+            FragColor = vec4(lighting, 1.0);
+        }
+    `,
+    shadowVertex: `#version 300 es
+        layout(location=0) in vec3 a_position;
+        uniform mat4 u_lightMVP;
+        void main() { gl_Position = u_lightMVP * vec4(a_position, 1.0); }
+    `,
+    shadowFragment: `#version 300 es
+        void main() { /* Depth only */ }
+    `,
+    floorVertex: `#version 300 es
+        layout(location=0) in vec3 a_position;
+        uniform mat4 u_modelViewMatrix;
+        uniform mat4 u_projectionMatrix;
+        uniform mat4 u_lightMVP;
+        out vec3 v_worldPos;
+        out vec4 v_shadowCoord;
+        void main() {
+            vec4 pos = vec4(a_position, 1.0);
+            gl_Position = u_projectionMatrix * u_modelViewMatrix * pos;
+            v_worldPos = a_position;
+            const mat4 biasMat = mat4(0.5,0.0,0.0,0.0, 0.0,0.5,0.0,0.0, 0.0,0.0,0.5,0.0, 0.5,0.5,0.5,1.0);
+            v_shadowCoord = biasMat * u_lightMVP * pos;
+        }
+    `,
+    floorFragment: `#version 300 es
+        precision highp float;
+        in vec3 v_worldPos;
+        in vec4 v_shadowCoord;
+        uniform sampler2D u_shadowMap;
+        out vec4 FragColor;
+        void main() {
+            vec2 uv = v_worldPos.xz * 0.5;
+            vec2 grid = abs(fract(uv - 0.5) - 0.5) / fwidth(uv);
+            float line = min(grid.x, grid.y);
+            float color = 1.0 - min(line, 1.0);
+            vec3 baseColor = mix(vec3(0.1, 0.12, 0.15), vec3(0.0, 0.8, 0.6), color * 0.3);
+            
+            // Radial fade
+            float dist = length(v_worldPos.xz);
+            float alpha = smoothstep(30.0, 5.0, dist);
+
+            // Shadow
+            vec3 projCoords = v_shadowCoord.xyz / v_shadowCoord.w;
+            float shadow = 0.0;
+            if(projCoords.z <= 1.0 && projCoords.x >= 0.0 && projCoords.x <= 1.0 && projCoords.y >= 0.0 && projCoords.y <= 1.0) {
+                float currentDepth = projCoords.z;
+                float bias = 0.005;
+                vec2 texelSize = 1.0 / vec2(textureSize(u_shadowMap, 0));
+                for(int x = -1; x <= 1; ++x) {
+                    for(int y = -1; y <= 1; ++y) {
+                        float pcfDepth = texture(u_shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+                        shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
+                    }
+                }
+                shadow /= 9.0;
+            }
+            
+            baseColor *= (1.0 - shadow * 0.5);
+            FragColor = vec4(baseColor, alpha);
+        }
+    `,
+    particleVertex: `#version 300 es
+        layout(location=0) in vec3 a_position;
+        layout(location=1) in vec2 a_life; // x: current, y: max
+        uniform mat4 u_modelViewMatrix;
+        uniform mat4 u_projectionMatrix;
+        out float v_lifeRatio;
+        void main() {
+            gl_Position = u_projectionMatrix * u_modelViewMatrix * vec4(a_position, 1.0);
+            v_lifeRatio = a_life.x / a_life.y;
+            gl_PointSize = 15.0 * v_lifeRatio / gl_Position.w; // Perspective size
+        }
+    `,
+    particleFragment: `#version 300 es
+        precision mediump float;
+        in float v_lifeRatio;
+        out vec4 FragColor;
+        void main() {
+            vec2 coord = gl_PointCoord - vec2(0.5);
+            if(length(coord) > 0.5) discard;
+            float intensity = 1.0 - (length(coord) * 2.0);
+            FragColor = vec4(0.0, 1.0, 0.8, intensity * v_lifeRatio * 0.8);
+        }
+    `
+};
+
+/* =========================================================================================
+   PHYSICS ENGINE (PBD SOFT BODIES)
+========================================================================================= */
+
+class PhysicsEngine {
+    constructor() {
+        this.maxParticles = 10000;
+        this.maxEdges = 50000;
+        this.maxFaces = 50000;
+
+        // Flat typed arrays for cache locality and speed
+        this.x = new Float32Array(this.maxParticles * 3); // current positions
+        this.p = new Float32Array(this.maxParticles * 3); // predicted positions
+        this.v = new Float32Array(this.maxParticles * 3); // velocities
+        this.invMass = new Float32Array(this.maxParticles);
+        this.colors = new Float32Array(this.maxParticles * 3);
+        this.restPos = new Float32Array(this.maxParticles * 3);
+
+        this.edges = new Uint32Array(this.maxEdges * 2);
+        this.restLengths = new Float32Array(this.maxEdges);
+        
+        // Rendering surface 
+        this.surfaceTriangles = new Uint32Array(this.maxFaces * 3);
+        
+        this.numParticles = 0;
+        this.numEdges = 0;
+        this.numTriangles = 0;
+
+        this.gravity = -9.8;
+        this.stiffness = 1.0;
+        this.damping = 0.05;
+        this.friction = 0.8;
+        this.floorY = 0.0;
+        
+        this.substeps = 15;
+        this.iterations = 2; // Iterations per substep
+
+        this.particlesSystem = new ParticleSystem(1000);
+    }
+
+    clear() {
+        this.numParticles = 0;
+        this.numEdges = 0;
+        this.numTriangles = 0;
+    }
+
+    addParticle(px, py, pz, mass, r, g, b) {
+        let i = this.numParticles;
+        if (i >= this.maxParticles) return -1;
+        this.x[i*3]=px; this.x[i*3+1]=py; this.x[i*3+2]=pz;
+        this.restPos[i*3]=px; this.restPos[i*3+1]=py; this.restPos[i*3+2]=pz;
+        this.v[i*3]=0; this.v[i*3+1]=0; this.v[i*3+2]=0;
+        this.invMass[i] = mass > 0 ? 1.0 / mass : 0;
+        this.colors[i*3]=r; this.colors[i*3+1]=g; this.colors[i*3+2]=b;
+        this.numParticles++;
+        return i;
+    }
+
+    addEdge(p1, p2) {
+        if (this.numEdges >= this.maxEdges) return;
+        // Avoid duplicates
+        for(let i=0; i<this.numEdges; i++) {
+            if ((this.edges[i*2]===p1 && this.edges[i*2+1]===p2) || 
+                (this.edges[i*2]===p2 && this.edges[i*2+1]===p1)) return;
+        }
+        let dx = this.x[p1*3] - this.x[p2*3];
+        let dy = this.x[p1*3+1] - this.x[p2*3+1];
+        let dz = this.x[p1*3+2] - this.x[p2*3+2];
+        this.edges[this.numEdges*2] = p1;
+        this.edges[this.numEdges*2+1] = p2;
+        this.restLengths[this.numEdges] = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        this.numEdges++;
+    }
+
+    step(dt, mouseTarget) {
+        if (dt > 0.05) dt = 0.05; // Cap dt
+        let sdt = dt / this.substeps;
+        
+        for (let step = 0; step < this.substeps; step++) {
+            // Predict
+            for (let i = 0; i < this.numParticles; i++) {
+                if (this.invMass[i] === 0) {
+                    this.p[i*3]=this.x[i*3]; this.p[i*3+1]=this.x[i*3+1]; this.p[i*3+2]=this.x[i*3+2];
+                    continue;
+                }
+                this.v[i*3+1] += this.gravity * sdt; // apply gravity
+                this.p[i*3] = this.x[i*3] + this.v[i*3] * sdt;
+                this.p[i*3+1] = this.x[i*3+1] + this.v[i*3+1] * sdt;
+                this.p[i*3+2] = this.x[i*3+2] + this.v[i*3+2] * sdt;
+            }
+
+            // Solve Constraints
+            for (let iter = 0; iter < this.iterations; iter++) {
+                // Distance Constraints (Edges)
+                for (let i = 0; i < this.numEdges; i++) {
+                    let id0 = this.edges[i*2], id1 = this.edges[i*2+1];
+                    let w0 = this.invMass[id0], w1 = this.invMass[id1];
+                    if (w0 + w1 === 0) continue;
+
+                    let dx = this.p[id1*3] - this.p[id0*3];
+                    let dy = this.p[id1*3+1] - this.p[id0*3+1];
+                    let dz = this.p[id1*3+2] - this.p[id0*3+2];
+                    let d = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                    if (d === 0) continue;
+
+                    let diff = (d - this.restLengths[i]) / d;
+                    let corr = diff * this.stiffness / (w0 + w1);
+                    
+                    let cx = dx * corr, cy = dy * corr, cz = dz * corr;
+
+                    if (w0 > 0) {
+                        this.p[id0*3] += cx * w0;
+                        this.p[id0*3+1] += cy * w0;
+                        this.p[id0*3+2] += cz * w0;
+                    }
+                    if (w1 > 0) {
+                        this.p[id1*3] -= cx * w1;
+                        this.p[id1*3+1] -= cy * w1;
+                        this.p[id1*3+2] -= cz * w1;
+                    }
+                }
+
+                // Mouse Drag Constraint
+                if (mouseTarget.active && mouseTarget.particleId !== -1) {
+                    let id = mouseTarget.particleId;
+                    this.p[id*3] = mouseTarget.pos[0];
+                    this.p[id*3+1] = mouseTarget.pos[1];
+                    this.p[id*3+2] = mouseTarget.pos[2];
+                }
+
+                // Floor Collision
+                for (let i = 0; i < this.numParticles; i++) {
+                    if (this.p[i*3+1] < this.floorY) {
+                        this.p[i*3+1] = this.floorY;
+                        // Friction
+                        let dx = this.p[i*3] - this.x[i*3];
+                        let dz = this.p[i*3+2] - this.x[i*3+2];
+                        this.p[i*3] -= dx * this.friction;
+                        this.p[i*3+2] -= dz * this.friction;
+                        
+                        // Particle effect on heavy impact
+                        if (this.v[i*3+1] < -3.0 && Math.random() > 0.8) {
+                            this.particlesSystem.emit(this.x[i*3], this.floorY, this.x[i*3+2], 
+                                                      (Math.random()-0.5)*5, Math.random()*5, (Math.random()-0.5)*5);
+                        }
+                    }
+                }
+            }
+
+            // Update Velocity & Position
+            for (let i = 0; i < this.numParticles; i++) {
+                if (this.invMass[i] === 0) continue;
+                this.v[i*3] = (this.p[i*3] - this.x[i*3]) / sdt;
+                this.v[i*3+1] = (this.p[i*3+1] - this.x[i*3+1]) / sdt;
+                this.v[i*3+2] = (this.p[i*3+2] - this.x[i*3+2]) / sdt;
+                
+                // Damping
+                this.v[i*3] *= (1.0 - this.damping);
+                this.v[i*3+1] *= (1.0 - this.damping);
+                this.v[i*3+2] *= (1.0 - this.damping);
+
+                this.x[i*3] = this.p[i*3];
+                this.x[i*3+1] = this.p[i*3+1];
+                this.x[i*3+2] = this.p[i*3+2];
+            }
+        }
+        
+        this.particlesSystem.update(dt);
+    }
+}
+
+/* =========================================================================================
+   PARTICLE SYSTEM (IMPACTS)
+========================================================================================= */
+class ParticleSystem {
+    constructor(maxCount) {
+        this.maxCount = maxCount;
+        this.pos = new Float32Array(maxCount * 3);
+        this.vel = new Float32Array(maxCount * 3);
+        this.life = new Float32Array(maxCount * 2); // [current, max]
+        this.activeCount = 0;
+        this.head = 0;
+    }
+    emit(x,y,z, vx,vy,vz) {
+        let i = this.head;
+        this.pos[i*3]=x; this.pos[i*3+1]=y; this.pos[i*3+2]=z;
+        this.vel[i*3]=vx; this.vel[i*3+1]=vy; this.vel[i*3+2]=vz;
+        this.life[i*2] = 0.5 + Math.random()*0.5; // current
+        this.life[i*2+1] = this.life[i*2]; // max
+        this.head = (this.head + 1) % this.maxCount;
+        if (this.activeCount < this.maxCount) this.activeCount++;
+    }
+    update(dt) {
+        for(let i=0; i<this.maxCount; i++) {
+            if(this.life[i*2] > 0) {
+                this.life[i*2] -= dt;
+                this.pos[i*3] += this.vel[i*3]*dt;
+                this.pos[i*3+1] += this.vel[i*3+1]*dt;
+                this.pos[i*3+2] += this.vel[i*3+2]*dt;
+                this.vel[i*3+1] -= 9.8*dt; // gravity
+            }
+        }
+    }
+}
+
+/* =========================================================================================
+   GEOMETRY GENERATOR (Tetrahedral Meshes)
+========================================================================================= */
+
+function buildSoftBlock(physics, sizeX, sizeY, sizeZ, spacing, origin, isSphere=false) {
+    let startIdx = physics.numParticles;
+    let nodes = new Int32Array((sizeX+1)*(sizeY+1)*(sizeZ+1));
+    
+    // Create particles
+    let idx = 0;
+    for (let z = 0; z <= sizeZ; z++) {
+        for (let y = 0; y <= sizeY; y++) {
+            for (let x = 0; x <= sizeX; x++) {
+                let px = (x - sizeX/2) * spacing;
+                let py = (y - sizeY/2) * spacing;
+                let pz = (z - sizeZ/2) * spacing;
+                
+                if (isSphere) {
+                    let d = Math.max(0.001, Math.sqrt(px*px + py*py + pz*pz));
+                    let maxR = (sizeX/2)*spacing;
+                    // Deform cube into sphere radially
+                    let factor = maxR / d;
+                    // Smooth deformation towards edges
+                    let mix = Math.min(1.0, d/maxR); 
+                    px = px * mix * factor + px * (1-mix);
+                    py = py * mix * factor + py * (1-mix);
+                    pz = pz * mix * factor + pz * (1-mix);
+                }
+
+                px += origin[0]; py += origin[1]; pz += origin[2];
+                
+                // Color based on local coords
+                let cx = x/sizeX, cy = y/sizeY, cz = z/sizeZ;
+                let r = 0.2 + 0.8*cx, g = 0.2 + 0.8*cy, b = 0.2 + 0.8*cz;
+                if(isSphere) { r=0.9; g=0.2+0.8*cy; b=0.8; }
+
+                nodes[idx++] = physics.addParticle(px, py, pz, 1.0, r, g, b);
+            }
+        }
+    }
+
+    let getIdx = (x,y,z) => nodes[z * (sizeY+1) * (sizeX+1) + y * (sizeX+1) + x];
+    let tetras = [];
+
+    // Create Tetrahedrons (checkerboard pattern to match diagonals)
+    for (let z = 0; z < sizeZ; z++) {
+        for (let y = 0; y < sizeY; y++) {
+            for (let x = 0; x < sizeX; x++) {
+                let p000 = getIdx(x, y, z), p100 = getIdx(x+1, y, z);
+                let p010 = getIdx(x, y+1, z), p110 = getIdx(x+1, y+1, z);
+                let p001 = getIdx(x, y, z+1), p101 = getIdx(x+1, y, z+1);
+                let p011 = getIdx(x, y+1, z+1), p111 = getIdx(x+1, y+1, z+1);
+
+                if ((x + y + z) % 2 === 0) {
+                    tetras.push([p000, p100, p010, p001], [p110, p010, p100, p111],
+                                [p101, p001, p100, p111], [p011, p010, p001, p111], [p100, p010, p001, p111]);
+                } else {
+                    tetras.push([p100, p110, p000, p101], [p010, p110, p000, p011],
+                                [p001, p101, p000, p011], [p111, p110, p101, p011], [p000, p110, p101, p011]);
+                }
+            }
+        }
+    }
+
+    // Extract unique edges for constraints
+    for (let t of tetras) {
+        physics.addEdge(t[0], t[1]); physics.addEdge(t[0], t[2]); physics.addEdge(t[0], t[3]);
+        physics.addEdge(t[1], t[2]); physics.addEdge(t[1], t[3]); physics.addEdge(t[2], t[3]);
+    }
+
+    // Extract surface triangles (faces that belong to exactly 1 tetrahedron)
+    let faceMap = new Map();
+    let addFace = (i0, i1, i2) => {
+        let arr = [i0, i1, i2].sort((a,b)=>a-b);
+        let hash = arr[0] + "_" + arr[1] + "_" + arr[2];
+        if (faceMap.has(hash)) faceMap.get(hash).count++;
+        else faceMap.set(hash, {count: 1, v: [i0, i1, i2]});
+    };
+
+    for (let t of tetras) {
+        addFace(t[0], t[2], t[1]); addFace(t[0], t[1], t[3]);
+        addFace(t[0], t[3], t[2]); addFace(t[1], t[2], t[3]);
+    }
+
+    for (let [hash, face] of faceMap.entries()) {
+        if (face.count === 1) { // Surface face
+            let fidx = physics.numTriangles * 3;
+            physics.surfaceTriangles[fidx] = face.v[0];
+            physics.surfaceTriangles[fidx+1] = face.v[1];
+            physics.surfaceTriangles[fidx+2] = face.v[2];
+            physics.numTriangles++;
+        }
+    }
+}
+
+
+/* =========================================================================================
+   WEBGL2 RENDERER
+========================================================================================= */
+
+class Renderer {
+    constructor(canvas, physics) {
+        this.gl = canvas.getContext('webgl2', { antialias: true });
+        if (!this.gl) throw new Error("WebGL2 not supported");
+        this.phys = physics;
+        this.ext = this.gl.getExtension('EXT_color_buffer_float');
+
+        this.initShaders();
+        this.initBuffers();
+        this.initShadowMap();
+
+        this.gl.enable(this.gl.DEPTH_TEST);
+        this.gl.enable(this.gl.CULL_FACE);
+        this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+
+        // Pre-allocate normal array
+        this.normals = new Float32Array(this.phys.maxParticles * 3);
+        
+        this.wireframeMode = false;
+    }
+
+    compileShader(type, source) {
+        let shader = this.gl.createShader(type);
+        this.gl.shaderSource(shader, source);
+        this.gl.compileShader(shader);
+        if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+            console.error(this.gl.getShaderInfoLog(shader));
+        }
+        return shader;
+    }
+
+    createProgram(vsSrc, fsSrc) {
+        let vs = this.compileShader(this.gl.VERTEX_SHADER, vsSrc);
+        let fs = this.compileShader(this.gl.FRAGMENT_SHADER, fsSrc);
+        let prog = this.gl.createProgram();
+        this.gl.attachShader(prog, vs); this.gl.attachShader(prog, fs);
+        this.gl.linkProgram(prog);
+        return prog;
+    }
+
+    initShaders() {
+        this.progMain = this.createProgram(SHADERS.mainVertex, SHADERS.mainFragment);
+        this.progShadow = this.createProgram(SHADERS.shadowVertex, SHADERS.shadowFragment);
+        this.progFloor = this.createProgram(SHADERS.floorVertex, SHADERS.floorFragment);
+        this.progParticle = this.createProgram(SHADERS.particleVertex, SHADERS.particleFragment);
+    }
+
+    initBuffers() {
+        let gl = this.gl;
+        // Soft Body VAO
+        this.vao = gl.createVertexArray(); gl.bindVertexArray(this.vao);
+        this.vboPos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.vboPos);
+        gl.bufferData(gl.ARRAY_BUFFER, this.phys.x.byteLength, gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+        this.vboNorm = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.vboNorm);
+        gl.bufferData(gl.ARRAY_BUFFER, this.normals.byteLength, gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+
+        this.vboCol = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.vboCol);
+        gl.bufferData(gl.ARRAY_BUFFER, this.phys.colors.byteLength, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
+
+        this.ebo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ebo);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, this.phys.surfaceTriangles.byteLength, gl.DYNAMIC_DRAW);
+        gl.bindVertexArray(null);
+
+        // Floor Quad
+        this.vaoFloor = gl.createVertexArray(); gl.bindVertexArray(this.vaoFloor);
+        let s = 50.0;
+        let floorVerts = new Float32Array([-s,0,-s, s,0,-s, s,0,s, -s,0,-s, s,0,s, -s,0,s]);
+        let vboF = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vboF);
+        gl.bufferData(gl.ARRAY_BUFFER, floorVerts, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        gl.bindVertexArray(null);
+        
+        // Particles VAO
+        this.vaoParticle = gl.createVertexArray(); gl.bindVertexArray(this.vaoParticle);
+        this.vboPartPos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.vboPartPos);
+        gl.bufferData(gl.ARRAY_BUFFER, this.phys.particlesSystem.pos.byteLength, gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        
+        this.vboPartLife = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.vboPartLife);
+        gl.bufferData(gl.ARRAY_BUFFER, this.phys.particlesSystem.life.byteLength, gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+        gl.bindVertexArray(null);
+    }
+
+    initShadowMap() {
+        let gl = this.gl;
+        this.shadowSize = 2048;
+        this.depthTex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.depthTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT32F, this.shadowSize, this.shadowSize, 0, gl.DEPTH_COMPONENT, gl.FLOAT, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        this.shadowFBO = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowFBO);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.depthTex, 0);
+        gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    computeNormals() {
+        this.normals.fill(0);
+        let x = this.phys.x;
+        let st = this.phys.surfaceTriangles;
+        for (let i = 0; i < this.phys.numTriangles; i++) {
+            let i0 = st[i*3]*3, i1 = st[i*3+1]*3, i2 = st[i*3+2]*3;
+            
+            let v0x = x[i0], v0y = x[i0+1], v0z = x[i0+2];
+            let v1x = x[i1], v1y = x[i1+1], v1z = x[i1+2];
+            let v2x = x[i2], v2y = x[i2+1], v2z = x[i2+2];
+
+            let d1x = v1x-v0x, d1y = v1y-v0y, d1z = v1z-v0z;
+            let d2x = v2x-v0x, d2y = v2y-v0y, d2z = v2z-v0z;
+
+            // Cross product
+            let nx = d1y*d2z - d1z*d2y;
+            let ny = d1z*d2x - d1x*d2z;
+            let nz = d1x*d2y - d1y*d2x;
+
+            this.normals[i0]+=nx; this.normals[i0+1]+=ny; this.normals[i0+2]+=nz;
+            this.normals[i1]+=nx; this.normals[i1+1]+=ny; this.normals[i1+2]+=nz;
+            this.normals[i2]+=nx; this.normals[i2+1]+=ny; this.normals[i2+2]+=nz;
+        }
+
+        for (let i = 0; i < this.phys.numParticles; i++) {
+            let idx = i*3;
+            let nx = this.normals[idx], ny = this.normals[idx+1], nz = this.normals[idx+2];
+            let l = Math.sqrt(nx*nx + ny*ny + nz*nz);
+            if(l > 0) { this.normals[idx]=nx/l; this.normals[idx+1]=ny/l; this.normals[idx+2]=nz/l; }
+        }
+    }
+
+    updateBuffers() {
+        let gl = this.gl;
+        this.computeNormals();
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vboPos);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.phys.x, 0, this.phys.numParticles*3);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vboNorm);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.normals, 0, this.phys.numParticles*3);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vboCol);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.phys.colors, 0, this.phys.numParticles*3);
+
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ebo);
+        gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, this.phys.surfaceTriangles, 0, this.phys.numTriangles*3);
+        
+        // Particles
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vboPartPos);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.phys.particlesSystem.pos);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vboPartLife);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.phys.particlesSystem.life);
+    }
+
+    render(camera) {
+        let gl = this.gl;
+        this.updateBuffers();
+
+        let lightPos = [10.0, 20.0, 10.0];
+        let lightDir = [-1.0, -2.0, -1.0];
+
+        let projMat = new Float32Array(16);
+        let viewMat = new Float32Array(16);
+        let lightProjMat = new Float32Array(16);
+        let lightViewMat = new Float32Array(16);
+        let lightMVP = new Float32Array(16);
+
+        MathUtils.mat4Perspective(projMat, Math.PI/4, gl.canvas.width/gl.canvas.height, 0.1, 100.0);
+        MathUtils.mat4LookAt(viewMat, camera.pos, camera.target, [0,1,0]);
+        
+        MathUtils.mat4Ortho(lightProjMat, -15, 15, -15, 15, 1.0, 50.0);
+        MathUtils.mat4LookAt(lightViewMat, lightPos, [0,0,0], [0,1,0]);
+        MathUtils.mat4Multiply(lightMVP, lightProjMat, lightViewMat);
+
+        // 1. SHADOW PASS
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowFBO);
+        gl.viewport(0, 0, this.shadowSize, this.shadowSize);
+        gl.clear(gl.DEPTH_BUFFER_BIT);
+        gl.useProgram(this.progShadow);
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.progShadow, "u_lightMVP"), false, lightMVP);
+        gl.bindVertexArray(this.vao);
+        gl.drawElements(gl.TRIANGLES, this.phys.numTriangles * 3, gl.UNSIGNED_INT, 0);
+
+        // 2. MAIN PASS
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        // Floor
+        gl.enable(gl.BLEND);
+        gl.useProgram(this.progFloor);
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.progFloor, "u_modelViewMatrix"), false, viewMat);
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.progFloor, "u_projectionMatrix"), false, projMat);
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.progFloor, "u_lightMVP"), false, lightMVP);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.depthTex);
+        gl.uniform1i(gl.getUniformLocation(this.progFloor, "u_shadowMap"), 0);
+        gl.bindVertexArray(this.vaoFloor);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.disable(gl.BLEND);
+
+        // Soft Body
+        gl.useProgram(this.progMain);
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.progMain, "u_modelViewMatrix"), false, viewMat);
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.progMain, "u_projectionMatrix"), false, projMat);
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.progMain, "u_lightMVP"), false, lightMVP);
+        gl.uniform3fv(gl.getUniformLocation(this.progMain, "u_lightDir"), lightDir);
+        gl.uniform1i(gl.getUniformLocation(this.progMain, "u_shadowMap"), 0);
+        
+        gl.bindVertexArray(this.vao);
+        if (this.wireframeMode) {
+            gl.drawElements(gl.LINES, this.phys.numTriangles * 3, gl.UNSIGNED_INT, 0);
+        } else {
+            gl.drawElements(gl.TRIANGLES, this.phys.numTriangles * 3, gl.UNSIGNED_INT, 0);
+        }
+        
+        // Particles
+        gl.enable(gl.BLEND);
+        gl.depthMask(false);
+        gl.useProgram(this.progParticle);
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.progParticle, "u_modelViewMatrix"), false, viewMat);
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.progParticle, "u_projectionMatrix"), false, projMat);
+        gl.bindVertexArray(this.vaoParticle);
+        gl.drawArrays(gl.POINTS, 0, this.phys.particlesSystem.maxCount);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
+    }
+}
+
+/* =========================================================================================
+   APPLICATION & INTERACTION LOGIC
+========================================================================================= */
+
+const canvas = document.getElementById('glcanvas');
+let physics = new PhysicsEngine();
+let renderer;
+
+let camera = {
+    pos: [0, 8, 20], target: [0, 2, 0],
+    angleX: Math.PI / 6, angleY: 0, distance: 20
+};
+
+let mouse = { x: 0, y: 0, active: false, particleId: -1, pos: [0,0,0], depth: 0 };
+let isPlaying = true;
+let simSpeed = 1.0;
+
+function updateCamera() {
+    camera.pos[0] = camera.target[0] + camera.distance * Math.sin(camera.angleY) * Math.cos(camera.angleX);
+    camera.pos[1] = camera.target[1] + camera.distance * Math.sin(camera.angleX);
+    camera.pos[2] = camera.target[2] + camera.distance * Math.cos(camera.angleY) * Math.cos(camera.angleX);
+}
+
+function init() {
+    resize();
+    window.addEventListener('resize', resize);
+    renderer = new Renderer(canvas, physics);
+    setupUI();
+    setupInput();
+    loadPreset('cube');
+    requestAnimationFrame(loop);
+}
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+
+// Raycast against particles for interaction
+function getRayFromMouse(mx, my) {
+    let ndcX = (mx / canvas.width) * 2 - 1;
+    let ndcY = 1 - (my / canvas.height) * 2;
+    
+    let projMat = new Float32Array(16);
+    let viewMat = new Float32Array(16);
+    MathUtils.mat4Perspective(projMat, Math.PI/4, canvas.width/canvas.height, 0.1, 100.0);
+    MathUtils.mat4LookAt(viewMat, camera.pos, camera.target, [0,1,0]);
+    
+    let invProj = new Float32Array(16); MathUtils.mat4Invert(invProj, projMat);
+    let invView = new Float32Array(16); MathUtils.mat4Invert(invView, viewMat);
+    
+    let rayClip = [ndcX, ndcY, -1.0];
+    let rayEye = [0,0,0]; MathUtils.transformMat4(rayEye, rayClip, invProj);
+    rayEye[2] = -1.0; 
+    let rayWorld = [0,0,0]; 
+    
+    // Manual multiplication for ray dir
+    rayWorld[0] = invView[0]*rayEye[0] + invView[4]*rayEye[1] + invView[8]*rayEye[2];
+    rayWorld[1] = invView[1]*rayEye[0] + invView[5]*rayEye[1] + invView[9]*rayEye[2];
+    rayWorld[2] = invView[2]*rayEye[0] + invView[6]*rayEye[1] + invView[10]*rayEye[2];
+    MathUtils.normalize(rayWorld, rayWorld);
+    
+    return { ro: camera.pos, rd: rayWorld };
+}
+
+function setupInput() {
+    let isDraggingView = false;
+    let lastMouse = {x:0, y:0};
+
+    canvas.addEventListener('mousedown', e => {
+        let ray = getRayFromMouse(e.clientX, e.clientY);
+        
+        // Find closest particle to ray
+        let closestDist = Infinity;
+        let closestId = -1;
+        let closestDepth = 0;
+        
+        for(let i=0; i<physics.numParticles; i++) {
+            let px = physics.x[i*3], py = physics.x[i*3+1], pz = physics.x[i*3+2];
+            let v = [px - ray.ro[0], py - ray.ro[1], pz - ray.ro[2]];
+            let t = MathUtils.dot(v, ray.rd);
+            if(t > 0) {
+                let proj = [ray.ro[0] + ray.rd[0]*t, ray.ro[1] + ray.rd[1]*t, ray.ro[2] + ray.rd[2]*t];
+                let dist = Math.sqrt((px-proj[0])**2 + (py-proj[1])**2 + (pz-proj[2])**2);
+                if(dist < 0.5 && dist < closestDist) { // Grab radius
+                    closestDist = dist; closestId = i; closestDepth = t;
+                }
+            }
+        }
+
+        if(closestId !== -1) {
+            mouse.active = true; mouse.particleId = closestId; mouse.depth = closestDepth;
+            mouse.pos[0] = ray.ro[0] + ray.rd[0]*closestDepth;
+            mouse.pos[1] = ray.ro[1] + ray.rd[1]*closestDepth;
+            mouse.pos[2] = ray.ro[2] + ray.rd[2]*closestDepth;
+        } else {
+            isDraggingView = true;
+        }
+        lastMouse.x = e.clientX; lastMouse.y = e.clientY;
+    });
+
+    canvas.addEventListener('mousemove', e => {
+        if(mouse.active) {
+            let ray = getRayFromMouse(e.clientX, e.clientY);
+            mouse.pos[0] = ray.ro[0] + ray.rd[0]*mouse.depth;
+            mouse.pos[1] = ray.ro[1] + ray.rd[1]*mouse.depth;
+            mouse.pos[2] = ray.ro[2] + ray.rd[2]*mouse.depth;
+            if(mouse.pos[1] < physics.floorY) mouse.pos[1] = physics.floorY;
+        } else if (isDraggingView) {
+            let dx = e.clientX - lastMouse.x;
+            let dy = e.clientY - lastMouse.y;
+            camera.angleY -= dx * 0.01;
+            camera.angleX += dy * 0.01;
+            camera.angleX = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, camera.angleX));
+            updateCamera();
+        }
+        lastMouse.x = e.clientX; lastMouse.y = e.clientY;
+    });
+
+    window.addEventListener('mouseup', () => { mouse.active = false; isDraggingView = false; });
+    canvas.addEventListener('wheel', e => {
+        camera.distance += e.deltaY * 0.05;
+        camera.distance = Math.max(5, Math.min(50, camera.distance));
+        updateCamera();
+    });
+}
+
+function setupUI() {
+    const bindSlider = (id, prop, isSimSpeed=false) => {
+        let el = document.getElementById(id);
+        let valEl = document.getElementById('val-'+id);
+        el.addEventListener('input', e => {
+            let val = parseFloat(e.target.value);
+            valEl.innerText = val.toFixed(2);
+            if(isSimSpeed) simSpeed = val; else physics[prop] = val;
+        });
+    };
+    bindSlider('gravity', 'gravity');
+    bindSlider('stiffness', 'stiffness');
+    bindSlider('damping', 'damping');
+    bindSlider('speed', 'speed', true);
+
+    document.getElementById('wireframe').addEventListener('change', e => renderer.wireframeMode = e.target.checked);
+    document.getElementById('pause').addEventListener('change', e => isPlaying = !e.target.checked);
+
+    document.getElementById('btn-cube').addEventListener('click', () => loadPreset('cube'));
+    document.getElementById('btn-sphere').addEventListener('click', () => loadPreset('sphere'));
+    document.getElementById('btn-stack').addEventListener('click', () => loadPreset('stack'));
+    document.getElementById('btn-chain').addEventListener('click', () => loadPreset('chain'));
+    document.getElementById('btn-reset').addEventListener('click', () => { physics.clear(); });
+}
+
+function loadPreset(type) {
+    physics.clear();
+    if(type === 'cube') {
+        physics.stiffness = 1.0; document.getElementById('stiffness').value = 1.0; document.getElementById('val-stiffness').innerText = "1.00";
+        buildSoftBlock(physics, 6, 6, 6, 0.8, [0, 6, 0]);
+    } else if (type === 'sphere') {
+        physics.stiffness = 1.5; document.getElementById('stiffness').value = 1.5; document.getElementById('val-stiffness').innerText = "1.50";
+        buildSoftBlock(physics, 6, 6, 6, 0.8, [0, 7, 0], true);
+    } else if (type === 'stack') {
+        physics.stiffness = 2.0; document.getElementById('stiffness').value = 2.0; document.getElementById('val-stiffness').innerText = "2.00";
+        buildSoftBlock(physics, 3, 3, 3, 0.8, [-2, 2, 0]);
+        buildSoftBlock(physics, 3, 3, 3, 0.8, [2, 2, 0]);
+        buildSoftBlock(physics, 3, 3, 3, 0.8, [0, 5, 0]);
+        buildSoftBlock(physics, 3, 3, 3, 0.8, [0, 8, 0]);
+    } else if (type === 'chain') {
+        physics.stiffness = 0.8; document.getElementById('stiffness').value = 0.8; document.getElementById('val-stiffness').innerText = "0.80";
+        buildSoftBlock(physics, 2, 10, 2, 0.8, [0, 6, 0]);
+        // Pin top
+        for(let i=0; i<physics.numParticles; i++) {
+            if(physics.x[i*3+1] > 9.5) physics.invMass[i] = 0;
+        }
+    }
+}
+
+let lastTime = 0;
+let fpsTimer = 0; let frames = 0;
+
+function loop(time) {
+    let dt = (time - lastTime) / 1000.0;
+    lastTime = time;
+
+    fpsTimer += dt; frames++;
+    if(fpsTimer >= 1.0) {
+        document.getElementById('stats').innerHTML = `FPS: ${frames}<br>Nodes: ${physics.numParticles}<br>Tetras: ${(physics.numEdges/6).toFixed(0)}<br>Faces: ${physics.numTriangles}`;
+        frames = 0; fpsTimer = 0;
+    }
+
+    updateCamera();
+
+    if(isPlaying && dt > 0) {
+        physics.step(Math.min(dt, 0.05) * simSpeed, mouse);
+    }
+
+    renderer.render(camera);
+    requestAnimationFrame(loop);
+}
+
+// Start
+init();
+
+</script>
+</body>
+</html>
+
+```

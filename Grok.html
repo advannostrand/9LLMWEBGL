@@ -1,0 +1,2360 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Complex 3D Physics • WebGL2</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap');
+  
+  :root {
+    --bg: #0a0a0f;
+    --panel: #121218;
+    --accent: #6366f1;
+  }
+  
+  * { margin:0; padding:0; box-sizing:border-box; }
+  
+  body {
+    background: var(--bg);
+    color: #e2e8f0;
+    font-family: 'Inter', system_ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  #glcanvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    display: block;
+    outline: none;
+    touch-action: none;
+  }
+  
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 100;
+    background: rgba(18, 18, 24, 0.92);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 16px;
+    width: 280px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  
+  #ui h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  #ui h1::before {
+    content: '';
+    display: block;
+    width: 18px;
+    height: 2px;
+    background: linear-gradient(to right, #6366f1, #a855f7);
+    border-radius: 2px;
+  }
+  
+  .section {
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  
+  .section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    gap: 12px;
+  }
+  
+  .row:last-child { margin-bottom: 0; }
+  
+  label {
+    font-size: 12px;
+    color: #94a3b8;
+    font-weight: 500;
+    min-width: 90px;
+  }
+  
+  input[type="range"] {
+    flex: 1;
+    accent-color: #6366f1;
+    height: 4px;
+  }
+  
+  .value {
+    font-family: 'Space Grotesk', monospace;
+    font-size: 11px;
+    background: #1f2937;
+    padding: 1px 6px;
+    border-radius: 4px;
+    min-width: 42px;
+    text-align: right;
+    color: #e0e7ff;
+  }
+  
+  button {
+    background: #1f2937;
+    color: #e2e8f0;
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.1s ease;
+  }
+  
+  button:hover {
+    background: #374151;
+    border-color: #6366f1;
+  }
+  
+  button:active {
+    transform: translateY(1px);
+  }
+  
+  .btn-group {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  
+  .preset-btn {
+    flex: 1;
+    min-width: 78px;
+    font-size: 11px;
+    padding: 5px 8px;
+  }
+  
+  .stats {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 4px;
+  }
+  
+  #fps {
+    font-family: 'Space Grotesk', monospace;
+    color: #22c55e;
+    font-weight: 600;
+  }
+  
+  .status {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    background: rgba(18,18,24,0.85);
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-size: 11px;
+    color: #64748b;
+    border: 1px solid rgba(255,255,255,0.08);
+    z-index: 100;
+  }
+  
+  .help {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    font-size: 10px;
+    color: #475569;
+    z-index: 100;
+    max-width: 220px;
+    line-height: 1.3;
+  }
+</style>
+</head>
+<body>
+<canvas id="glcanvas" width="1280" height="720"></canvas>
+
+<div id="ui">
+  <h1>3D Physics Lab</h1>
+  
+  <div class="section">
+    <div class="row">
+      <label>Simulation</label>
+      <div class="btn-group">
+        <button id="pauseBtn">⏸ Pause</button>
+        <button id="resetBtn">⟳ Reset</button>
+      </div>
+    </div>
+    <div class="row">
+      <label>View</label>
+      <div>
+        <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;">
+          <input type="checkbox" id="wireframeChk"> <span style="font-size:12px">Wireframe</span>
+        </label>
+      </div>
+    </div>
+  </div>
+  
+  <div class="section">
+    <div class="row">
+      <label>Gravity</label>
+      <div style="display:flex; align-items:center; gap:8px; flex:1;">
+        <input type="range" id="gravitySlider" min="-30" max="0" step="0.5" value="-18">
+        <span class="value" id="gravityVal">-18.0</span>
+      </div>
+    </div>
+    
+    <div class="row">
+      <label>Restitution</label>
+      <div style="display:flex; align-items:center; gap:8px; flex:1;">
+        <input type="range" id="restitutionSlider" min="0" max="1" step="0.05" value="0.35">
+        <span class="value" id="restitutionVal">0.35</span>
+      </div>
+    </div>
+    
+    <div class="row">
+      <label>Friction</label>
+      <div style="display:flex; align-items:center; gap:8px; flex:1;">
+        <input type="range" id="frictionSlider" min="0" max="1" step="0.05" value="0.65">
+        <span class="value" id="frictionVal">0.65</span>
+      </div>
+    </div>
+    
+    <div class="row">
+      <label>Soft Stiffness</label>
+      <div style="display:flex; align-items:center; gap:8px; flex:1;">
+        <input type="range" id="stiffnessSlider" min="0.1" max="8" step="0.1" value="3.5">
+        <span class="value" id="stiffnessVal">3.5</span>
+      </div>
+    </div>
+    
+    <div class="row">
+      <label>Damping</label>
+      <div style="display:flex; align-items:center; gap:8px; flex:1;">
+        <input type="range" id="dampingSlider" min="0" max="0.99" step="0.01" value="0.92">
+        <span class="value" id="dampingVal">0.92</span>
+      </div>
+    </div>
+  </div>
+  
+  <div class="section">
+    <div style="margin-bottom:6px; font-size:12px; color:#94a3b8; font-weight:500;">PRESETS</div>
+    <div class="btn-group">
+      <button class="preset-btn" id="presetRigid">Rigid Collapse</button>
+      <button class="preset-btn" id="presetSoft">Soft Deform</button>
+      <button class="preset-btn" id="presetDestroy">Destruction</button>
+    </div>
+  </div>
+  
+  <div class="stats">
+    <div>Bodies: <span id="bodyCount">0</span></div>
+    <div>Particles: <span id="particleCount">0</span></div>
+    <div>FPS: <span id="fps">60</span></div>
+  </div>
+</div>
+
+<div class="status" id="status">WebGL2 • Real-time Physics</div>
+
+<div class="help">
+  <strong>Controls:</strong><br>
+  • Left drag on empty = Orbit camera<br>
+  • Left drag on object = Throw / Apply impulse<br>
+  • Scroll = Zoom<br>
+  • Right click = Reset camera
+</div>
+
+<script>
+// ============================================================
+// COMPLEX 3D PHYSICS SIMULATION - WebGL2 Vanilla
+// Single-file production-ready implementation
+// Features: Rigid convex polyhedra + Soft body (PBD)
+// SAT collision, impulse resolution, shadows, mouse interaction
+// ============================================================
+
+const canvas = document.getElementById('glcanvas');
+const gl = canvas.getContext('webgl2', { 
+  antialias: true, 
+  alpha: false,
+  depth: true,
+  stencil: false,
+  preserveDrawingBuffer: false 
+});
+
+if (!gl) {
+  alert('WebGL2 not supported. Please use a modern browser.');
+  throw new Error('WebGL2 unavailable');
+}
+
+// ============================================================
+// MATH UTILITIES (vec3, quat, mat4) - Heavily used in physics & rendering
+// ============================================================
+
+const EPS = 1e-6;
+
+function vec3(x=0, y=0, z=0) { return {x, y, z}; }
+function v3add(a, b) { return {x: a.x+b.x, y: a.y+b.y, z: a.z+b.z}; }
+function v3sub(a, b) { return {x: a.x-b.x, y: a.y-b.y, z: a.z-b.z}; }
+function v3scale(v, s) { return {x: v.x*s, y: v.y*s, z: v.z*s}; }
+function v3dot(a, b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
+function v3cross(a, b) { 
+  return { 
+    x: a.y*b.z - a.z*b.y, 
+    y: a.z*b.x - a.x*b.z, 
+    z: a.x*b.y - a.y*b.x 
+  }; 
+}
+function v3length(v) { return Math.sqrt(v3dot(v, v)); }
+function v3normalize(v) { 
+  const len = v3length(v); 
+  return len > EPS ? v3scale(v, 1/len) : {x:0,y:0,z:0}; 
+}
+function v3distance(a, b) { return v3length(v3sub(a, b)); }
+function v3lerp(a, b, t) { return v3add(v3scale(a, 1-t), v3scale(b, t)); }
+
+// Quaternion utilities
+function quat(x=0, y=0, z=0, w=1) { return {x, y, z, w}; }
+function qidentity() { return {x:0, y:0, z:0, w:1}; }
+function qmultiply(a, b) {
+  return {
+    x: a.w*b.x + a.x*b.w + a.y*b.z - a.z*b.y,
+    y: a.w*b.y + a.y*b.w + a.z*b.x - a.x*b.z,
+    z: a.w*b.z + a.z*b.w + a.x*b.y - a.y*b.x,
+    w: a.w*b.w - a.x*b.x - a.y*b.y - a.z*b.z
+  };
+}
+function qnormalize(q) {
+  const len = Math.sqrt(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w);
+  return len > EPS ? {x:q.x/len, y:q.y/len, z:q.z/len, w:q.w/len} : qidentity();
+}
+function qfromAxisAngle(axis, angle) {
+  const half = angle * 0.5;
+  const s = Math.sin(half);
+  const c = Math.cos(half);
+  const n = v3normalize(axis);
+  return {x: n.x * s, y: n.y * s, z: n.z * s, w: c};
+}
+function qrotateVec(q, v) {
+  const qv = {x: v.x, y: v.y, z: v.z, w: 0};
+  const qi = {x:-q.x, y:-q.y, z:-q.z, w:q.w};
+  const tmp = qmultiply(q, qv);
+  const res = qmultiply(tmp, qi);
+  return {x: res.x, y: res.y, z: res.z};
+}
+function qtoMat4(q, pos) {
+  const x = q.x, y = q.y, z = q.z, w = q.w;
+  const xx = x*x, yy = y*y, zz = z*z;
+  const xy = x*y, xz = x*z, yz = y*z;
+  const wx = w*x, wy = w*y, wz = w*z;
+  
+  return [
+    1 - 2*(yy + zz), 2*(xy - wz),     2*(xz + wy),     0,
+    2*(xy + wz),     1 - 2*(xx + zz), 2*(yz - wx),     0,
+    2*(xz - wy),     2*(yz + wx),     1 - 2*(xx + yy), 0,
+    pos.x,           pos.y,           pos.z,           1
+  ];
+}
+function qintegrate(q, angVel, dt) {
+  const halfDt = dt * 0.5;
+  const dq = {
+    x: halfDt * ( angVel.x * q.w + angVel.y * q.z - angVel.z * q.y ),
+    y: halfDt * ( angVel.y * q.w + angVel.z * q.x - angVel.x * q.z ),
+    z: halfDt * ( angVel.z * q.w + angVel.x * q.y - angVel.y * q.x ),
+    w: halfDt * (-angVel.x * q.x - angVel.y * q.y - angVel.z * q.z )
+  };
+  return qnormalize({ 
+    x: q.x + dq.x, y: q.y + dq.y, z: q.z + dq.z, w: q.w + dq.w 
+  });
+}
+
+// 4x4 Matrix utilities
+function m4identity() {
+  return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+}
+function m4multiply(a, b) {
+  const out = new Array(16);
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      out[i*4 + j] = 
+        a[i*4+0]*b[0*4+j] + a[i*4+1]*b[1*4+j] + 
+        a[i*4+2]*b[2*4+j] + a[i*4+3]*b[3*4+j];
+    }
+  }
+  return out;
+}
+function m4perspective(fov, aspect, near, far) {
+  const f = 1.0 / Math.tan(fov * 0.5);
+  const nf = 1 / (near - far);
+  return [
+    f / aspect, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (far + near) * nf, -1,
+    0, 0, (2 * far * near) * nf, 0
+  ];
+}
+function m4lookAt(eye, center, up) {
+  const z = v3normalize(v3sub(eye, center));
+  const x = v3normalize(v3cross(up, z));
+  const y = v3cross(z, x);
+  return [
+    x.x, y.x, z.x, 0,
+    x.y, y.y, z.y, 0,
+    x.z, y.z, z.z, 0,
+    -v3dot(x, eye), -v3dot(y, eye), -v3dot(z, eye), 1
+  ];
+}
+function m4transpose(m) {
+  return [
+    m[0], m[4], m[8], m[12],
+    m[1], m[5], m[9], m[13],
+    m[2], m[6], m[10], m[14],
+    m[3], m[7], m[11], m[15]
+  ];
+}
+function m4inverse(m) {
+  const inv = new Array(16);
+  const a00 = m[0], a01 = m[1], a02 = m[2], a03 = m[3];
+  const a10 = m[4], a11 = m[5], a12 = m[6], a13 = m[7];
+  const a20 = m[8], a21 = m[9], a22 = m[10], a23 = m[11];
+  const a30 = m[12], a31 = m[13], a32 = m[14], a33 = m[15];
+  
+  inv[0] = a11*a22*a33 - a11*a23*a32 - a21*a12*a33 + a21*a13*a32 + a31*a12*a23 - a31*a13*a22;
+  inv[1] = -a01*a22*a33 + a01*a23*a32 + a21*a02*a33 - a21*a03*a32 - a31*a02*a23 + a31*a03*a22;
+  inv[2] = a01*a12*a33 - a01*a13*a32 - a11*a02*a33 + a11*a03*a32 + a31*a02*a13 - a31*a03*a12;
+  inv[3] = -a01*a12*a23 + a01*a13*a22 + a11*a02*a23 - a11*a03*a22 - a21*a02*a13 + a21*a03*a12;
+  
+  inv[4] = -a10*a22*a33 + a10*a23*a32 + a20*a12*a33 - a20*a13*a32 - a30*a12*a23 + a30*a13*a22;
+  inv[5] = a00*a22*a33 - a00*a23*a32 - a20*a02*a33 + a20*a03*a32 + a30*a02*a23 - a30*a03*a22;
+  inv[6] = -a00*a12*a33 + a00*a13*a32 + a10*a02*a33 - a10*a03*a32 - a30*a02*a13 + a30*a03*a12;
+  inv[7] = a00*a12*a23 - a00*a13*a22 - a10*a02*a23 + a10*a03*a22 + a20*a02*a13 - a20*a03*a12;
+  
+  inv[8] = a10*a21*a33 - a10*a23*a31 - a20*a11*a33 + a20*a13*a31 + a30*a11*a23 - a30*a13*a21;
+  inv[9] = -a00*a21*a33 + a00*a23*a31 + a20*a01*a33 - a20*a03*a31 - a30*a01*a23 + a30*a03*a21;
+  inv[10] = a00*a11*a33 - a00*a13*a31 - a10*a01*a33 + a10*a03*a31 + a30*a01*a13 - a30*a03*a11;
+  inv[11] = -a00*a11*a23 + a00*a13*a21 + a10*a01*a23 - a10*a03*a21 - a20*a01*a13 + a20*a03*a11;
+  
+  inv[12] = -a10*a21*a32 + a10*a22*a31 + a20*a11*a32 - a20*a12*a31 - a30*a11*a22 + a30*a12*a21;
+  inv[13] = a00*a21*a32 - a00*a22*a31 - a20*a01*a32 + a20*a02*a31 + a30*a01*a22 - a30*a02*a21;
+  inv[14] = -a00*a11*a32 + a00*a12*a31 + a10*a01*a32 - a10*a02*a31 - a30*a01*a12 + a30*a02*a11;
+  inv[15] = a00*a11*a22 - a00*a12*a21 - a10*a01*a22 + a10*a02*a21 + a20*a01*a12 - a20*a02*a11;
+  
+  let det = a00*inv[0] + a01*inv[4] + a02*inv[8] + a03*inv[12];
+  if (Math.abs(det) < EPS) return m4identity();
+  det = 1.0 / det;
+  for (let i = 0; i < 16; i++) inv[i] *= det;
+  return inv;
+}
+
+function qtoMat3(q) {
+  const x = q.x, y = q.y, z = q.z, w = q.w;
+  const xx = x*x, yy = y*y, zz = z*z;
+  const xy = x*y, xz = x*z, yz = y*z;
+  const wx = w*x, wy = w*y, wz = w*z;
+  return [
+    1-2*(yy+zz), 2*(xy-wz),   2*(xz+wy),
+    2*(xy+wz),   1-2*(xx+zz), 2*(yz-wx),
+    2*(xz-wy),   2*(yz+wx),   1-2*(xx+yy)
+  ];
+}
+
+function transformPoint(pos, quat, point) {
+  const rotated = qrotateVec(quat, point);
+  return v3add(pos, rotated);
+}
+
+// ============================================================
+// MESH GENERATION - Procedural complex convex polyhedra
+// ============================================================
+
+function createTetrahedron() {
+  const s = 1.2;
+  const verts = [
+    {x: s, y: s, z: s},
+    {x: s, y: -s, z: -s},
+    {x: -s, y: s, z: -s},
+    {x: -s, y: -s, z: s}
+  ];
+  const faces = [
+    [0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 3, 2]
+  ];
+  return { verts, faces, name: 'Tetrahedron' };
+}
+
+function createCube() {
+  const s = 1.0;
+  const verts = [
+    {x:-s, y:-s, z:-s}, {x: s, y:-s, z:-s}, {x: s, y: s, z:-s}, {x:-s, y: s, z:-s},
+    {x:-s, y:-s, z: s}, {x: s, y:-s, z: s}, {x: s, y: s, z: s}, {x:-s, y: s, z: s}
+  ];
+  const faces = [
+    [0,1,2,3], [4,7,6,5], [0,4,5,1], [1,5,6,2], [2,6,7,3], [3,7,4,0]
+  ];
+  return { verts, faces, name: 'Cube' };
+}
+
+function createOctahedron() {
+  const s = 1.4;
+  const verts = [
+    {x: s, y:0, z:0}, {x:-s, y:0, z:0},
+    {x:0, y: s, z:0}, {x:0, y:-s, z:0},
+    {x:0, y:0, z: s}, {x:0, y:0, z:-s}
+  ];
+  const faces = [
+    [0,2,4], [0,4,3], [0,3,5], [0,5,2],
+    [1,4,2], [1,3,4], [1,5,3], [1,2,5]
+  ];
+  return { verts, faces, name: 'Octahedron' };
+}
+
+function createIcosahedron() {
+  const t = (1 + Math.sqrt(5)) / 2;
+  const s = 0.9;
+  const verts = [
+    {x:-s, y: t*s, z:0}, {x: s, y: t*s, z:0}, {x:-s, y:-t*s, z:0}, {x: s, y:-t*s, z:0},
+    {x:0, y:-s, z: t*s}, {x:0, y: s, z: t*s}, {x:0, y:-s, z:-t*s}, {x:0, y: s, z:-t*s},
+    {x: t*s, y:0, z:-s}, {x: t*s, y:0, z: s}, {x:-t*s, y:0, z:-s}, {x:-t*s, y:0, z: s}
+  ];
+  const faces = [
+    [0,5,11], [0,1,5], [0,7,1], [0,10,7], [0,11,10],
+    [1,9,5], [5,4,11], [11,2,10], [10,6,7], [7,8,1],
+    [3,9,4], [3,4,2], [3,2,6], [3,6,8], [3,8,9],
+    [4,9,5], [2,4,11], [6,2,10], [8,6,7], [9,8,1]
+  ];
+  return { verts, faces, name: 'Icosahedron' };
+}
+
+function createIrregularPolyhedron() {
+  const verts = [];
+  const s = 1.0;
+  verts.push({x: s*1.1, y:0, z:0});
+  verts.push({x:-s*1.1, y:0, z:0});
+  verts.push({x:0, y: s*1.3, z:0});
+  verts.push({x:0, y:-s*1.3, z:0});
+  verts.push({x:0, y:0, z: s*1.0});
+  verts.push({x:0, y:0, z:-s*1.0});
+  verts.push({x: s*0.6, y: s*0.6, z: s*0.6});
+  verts.push({x:-s*0.6, y: s*0.6, z: s*0.6});
+  verts.push({x: s*0.6, y:-s*0.6, z: s*0.6});
+  verts.push({x: s*0.6, y: s*0.6, z:-s*0.6});
+  
+  const faces = [
+    [0,2,4], [0,4,3], [0,3,5], [0,5,2],
+    [1,4,2], [1,3,4], [1,5,3], [1,2,5],
+    [6,2,0], [6,0,4], [7,2,1], [7,1,4],
+    [8,3,0], [8,0,4], [9,5,0], [9,0,2]
+  ];
+  return { verts, faces, name: 'Irregular Poly' };
+}
+
+function triangulateFace(face) {
+  const tris = [];
+  for (let i = 1; i < face.length - 1; i++) {
+    tris.push([face[0], face[i], face[i+1]]);
+  }
+  return tris;
+}
+
+function buildMeshData(meshDef) {
+  const { verts, faces } = meshDef;
+  const positions = [];
+  const normals = [];
+  const indices = [];
+  
+  const vertexNormals = new Array(verts.length).fill(0).map(() => ({x:0, y:0, z:0}));
+  const faceNormals = [];
+  
+  faces.forEach(face => {
+    const tris = triangulateFace(face);
+    const v0 = verts[face[0]];
+    const v1 = verts[face[1]];
+    const v2 = verts[face[2]];
+    let fn = v3normalize(v3cross(v3sub(v1, v0), v3sub(v2, v0)));
+    faceNormals.push(fn);
+    
+    tris.forEach(tri => {
+      const i0 = tri[0], i1 = tri[1], i2 = tri[2];
+      indices.push(i0, i1, i2);
+      
+      const n = fn;
+      vertexNormals[i0] = v3add(vertexNormals[i0], n);
+      vertexNormals[i1] = v3add(vertexNormals[i1], n);
+      vertexNormals[i2] = v3add(vertexNormals[i2], n);
+    });
+  });
+  
+  vertexNormals.forEach((n, i) => {
+    const nn = v3normalize(n);
+    normals.push(nn.x, nn.y, nn.z);
+  });
+  
+  verts.forEach(v => {
+    positions.push(v.x, v.y, v.z);
+  });
+  
+  const edgeSet = new Set();
+  const edges = [];
+  faces.forEach(face => {
+    for (let i = 0; i < face.length; i++) {
+      const a = face[i];
+      const b = face[(i + 1) % face.length];
+      const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        edges.push(a, b);
+      }
+    }
+  });
+  
+  return {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    indices: new Uint16Array(indices),
+    edgeIndices: new Uint16Array(edges),
+    vertCount: verts.length,
+    triCount: indices.length / 3,
+    faceNormals,
+    localVerts: verts,
+    name: meshDef.name
+  };
+}
+
+// ============================================================
+// RIGID BODY PHYSICS
+// ============================================================
+
+class RigidBody {
+  constructor(meshData, position, quaternion = qidentity(), color = [0.7, 0.75, 0.85]) {
+    this.pos = {...position};
+    this.quat = {...quaternion};
+    this.linVel = {x:0, y:0, z:0};
+    this.angVel = {x:0, y:0, z:0};
+    
+    this.mesh = meshData;
+    this.color = color;
+    
+    this.mass = 1.0;
+    this.invMass = 1.0;
+    this.inertia = [1,0,0, 0,1,0, 0,0,1];
+    this.invInertia = [1,0,0, 0,1,0, 0,0,1];
+    
+    this.friction = 0.6;
+    this.restitution = 0.4;
+    
+    this.sleeping = false;
+    this.sleepTimer = 0;
+  }
+  
+  applyImpulse(impulse, worldPoint) {
+    if (this.invMass === 0) return;
+    
+    this.linVel = v3add(this.linVel, v3scale(impulse, this.invMass));
+    
+    const r = v3sub(worldPoint, this.pos);
+    const torque = v3cross(r, impulse);
+    
+    const localTorque = qrotateVec({x:-this.quat.x, y:-this.quat.y, z:-this.quat.z, w:this.quat.w}, torque);
+    const localAngImpulse = this.applyMat3(this.invInertia, localTorque);
+    const worldAngImpulse = qrotateVec(this.quat, localAngImpulse);
+    
+    this.angVel = v3add(this.angVel, worldAngImpulse);
+  }
+  
+  applyMat3(m, v) {
+    return {
+      x: m[0]*v.x + m[1]*v.y + m[2]*v.z,
+      y: m[3]*v.x + m[4]*v.y + m[5]*v.z,
+      z: m[6]*v.x + m[7]*v.y + m[8]*v.z
+    };
+  }
+  
+  getWorldVerts() {
+    return this.mesh.localVerts.map(v => transformPoint(this.pos, this.quat, v));
+  }
+  
+  getWorldNormals() {
+    return this.mesh.faceNormals.map(n => qrotateVec(this.quat, n));
+  }
+}
+
+function computeMassProperties(localVerts, faces, density = 1.0) {
+  let volume = 0;
+  let com = {x:0, y:0, z:0};
+  let xx = 0, yy = 0, zz = 0, xy = 0, xz = 0, yz = 0;
+  
+  for (let f = 0; f < faces.length; f++) {
+    const face = faces[f];
+    for (let t = 1; t < face.length - 1; t++) {
+      const i0 = face[0], i1 = face[t], i2 = face[t+1];
+      const v0 = localVerts[i0];
+      const v1 = localVerts[i1];
+      const v2 = localVerts[i2];
+      
+      const tetVol = v3dot(v0, v3cross(v1, v2)) / 6.0;
+      volume += tetVol;
+      
+      const tetComContrib = v3scale(v3add(v3add(v0, v1), v2), tetVol);
+      com = v3add(com, tetComContrib);
+      
+      const v0x = v0.x, v0y = v0.y, v0z = v0.z;
+      const v1x = v1.x, v1y = v1.y, v1z = v1.z;
+      const v2x = v2.x, v2y = v2.y, v2z = v2.z;
+      
+      xx += tetVol * (v0x*v0x + v1x*v1x + v2x*v2x + v0x*v1x + v0x*v2x + v1x*v2x) * 0.1;
+      yy += tetVol * (v0y*v0y + v1y*v1y + v2y*v2y + v0y*v1y + v0y*v2y + v1y*v2y) * 0.1;
+      zz += tetVol * (v0z*v0z + v1z*v1z + v2z*v2z + v0z*v1z + v0z*v2z + v1z*v2z) * 0.1;
+      xy += tetVol * (v0x*v0y + v1x*v1y + v2x*v2y + (v0x*v1y + v1x*v0y + v0x*v2y + v2x*v0y + v1x*v2y + v2x*v1y)*0.5) * 0.1;
+      xz += tetVol * (v0x*v0z + v1x*v1z + v2x*v2z + (v0x*v1z + v1x*v0z + v0x*v2z + v2x*v0z + v1x*v2z + v2x*v1z)*0.5) * 0.1;
+      yz += tetVol * (v0y*v0z + v1y*v1z + v2y*v2z + (v0y*v1z + v1y*v0z + v0y*v2z + v2y*v0z + v1y*v2z + v2y*v1z)*0.5) * 0.1;
+    }
+  }
+  
+  if (Math.abs(volume) < EPS) {
+    return { mass: 1, com: {x:0,y:0,z:0}, inertia: [1,0,0,0,1,0,0,0,1], invInertia: [1,0,0,0,1,0,0,0,1] };
+  }
+  
+  com = v3scale(com, 1.0 / (volume * 4.0));
+  
+  const mass = Math.abs(volume) * density;
+  
+  xx = xx / volume * mass - mass * (com.y*com.y + com.z*com.z);
+  yy = yy / volume * mass - mass * (com.x*com.x + com.z*com.z);
+  zz = zz / volume * mass - mass * (com.x*com.x + com.y*com.y);
+  xy = xy / volume * mass - mass * com.x * com.y;
+  xz = xz / volume * mass - mass * com.x * com.z;
+  yz = yz / volume * mass - mass * com.y * com.z;
+  
+  const Ixx = yy + zz;
+  const Iyy = xx + zz;
+  const Izz = xx + yy;
+  const Ixy = -xy;
+  const Ixz = -xz;
+  const Iyz = -yz;
+  
+  const inertia = [Ixx, Ixy, Ixz, Ixy, Iyy, Iyz, Ixz, Iyz, Izz];
+  const invInertia = invertMat3(inertia);
+  
+  return { mass, com, inertia, invInertia };
+}
+
+function invertMat3(m) {
+  const a = m[0], b = m[1], c = m[2];
+  const d = m[3], e = m[4], f = m[5];
+  const g = m[6], h = m[7], i = m[8];
+  
+  const det = a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g);
+  if (Math.abs(det) < EPS) return [1,0,0, 0,1,0, 0,0,1];
+  
+  const invDet = 1 / det;
+  return [
+    (e*i - f*h) * invDet, (c*h - b*i) * invDet, (b*f - c*e) * invDet,
+    (f*g - d*i) * invDet, (a*i - c*g) * invDet, (c*d - a*f) * invDet,
+    (d*h - e*g) * invDet, (b*g - a*h) * invDet, (a*e - b*d) * invDet
+  ];
+}
+
+// ============================================================
+// SOFT BODY (Position Based Dynamics / Verlet + Constraints)
+// ============================================================
+
+class SoftBody {
+  constructor() {
+    this.particles = [];
+    this.constraints = [];
+    this.color = [0.4, 0.85, 0.6];
+    this.stiffness = 3.5;
+    this.damping = 0.92;
+  }
+  
+  createSoftCube(center, size = 1.8, segments = 3) {
+    this.particles = [];
+    this.constraints = [];
+    
+    const step = size / (segments - 1);
+    const start = -size * 0.5;
+    
+    for (let x = 0; x < segments; x++) {
+      for (let y = 0; y < segments; y++) {
+        for (let z = 0; z < segments; z++) {
+          const pos = {
+            x: center.x + start + x * step + (Math.random() - 0.5) * 0.02,
+            y: center.y + start + y * step + (Math.random() - 0.5) * 0.02,
+            z: center.z + start + z * step + (Math.random() - 0.5) * 0.02
+          };
+          this.particles.push({
+            pos: {...pos},
+            prev: {...pos},
+            vel: {x:0, y:0, z:0}
+          });
+        }
+      }
+    }
+    
+    const idx = (x,y,z) => x * segments * segments + y * segments + z;
+    
+    for (let x = 0; x < segments; x++) {
+      for (let y = 0; y < segments; y++) {
+        for (let z = 0; z < segments; z++) {
+          const i = idx(x, y, z);
+          
+          if (x < segments-1) this.addConstraint(i, idx(x+1,y,z), step);
+          if (y < segments-1) this.addConstraint(i, idx(x,y+1,z), step);
+          if (z < segments-1) this.addConstraint(i, idx(x,y,z+1), step);
+          
+          if (x < segments-1 && y < segments-1) this.addConstraint(i, idx(x+1,y+1,z), step * Math.SQRT2);
+          if (x < segments-1 && z < segments-1) this.addConstraint(i, idx(x+1,y,z+1), step * Math.SQRT2);
+          if (y < segments-1 && z < segments-1) this.addConstraint(i, idx(x,y+1,z+1), step * Math.SQRT2);
+          
+          if (x < segments-1 && y < segments-1 && z < segments-1) {
+            this.addConstraint(i, idx(x+1,y+1,z+1), step * Math.sqrt(3));
+          }
+        }
+      }
+    }
+  }
+  
+  addConstraint(i1, i2, restLen) {
+    this.constraints.push({ i1, i2, restLen, compliance: 0.0002 });
+  }
+  
+  integrate(dt, gravity, globalDamping) {
+    const g = gravity.y || -18;
+    for (let p of this.particles) {
+      const vel = v3sub(p.pos, p.prev);
+      const dampedVel = v3scale(vel, globalDamping);
+      p.prev = {...p.pos};
+      p.pos.x += dampedVel.x;
+      p.pos.y += dampedVel.y + g * dt * dt * 0.5;
+      p.pos.z += dampedVel.z;
+    }
+  }
+  
+  solveConstraints(iterations = 12) {
+    const compliance = 1.0 / Math.max(0.1, this.stiffness);
+    
+    for (let iter = 0; iter < iterations; iter++) {
+      for (let c of this.constraints) {
+        const p1 = this.particles[c.i1];
+        const p2 = this.particles[c.i2];
+        
+        const diff = v3sub(p2.pos, p1.pos);
+        const dist = v3length(diff);
+        if (dist < EPS) continue;
+        
+        const correction = (dist - c.restLen) / dist * 0.5;
+        
+        const corr1 = v3scale(diff, correction * (1 - compliance));
+        const corr2 = v3scale(diff, -correction * (1 - compliance));
+        
+        p1.pos = v3sub(p1.pos, corr1);
+        p2.pos = v3add(p2.pos, corr2);
+      }
+    }
+  }
+  
+  collideGround(restitution, friction) {
+    for (let p of this.particles) {
+      if (p.pos.y < 0) {
+        const vy = p.pos.y - p.prev.y;
+        p.pos.y = 0;
+        p.prev.y = p.pos.y + vy * restitution;
+        p.prev.x = p3lerp(p.prev.x, p.pos.x, friction * 0.3);
+        p.prev.z = p3lerp(p.prev.z, p.pos.z, friction * 0.3);
+      }
+    }
+  }
+  
+  collideWithRigid(rigid, restitution = 0.3) {
+    if (!rigid || rigid.invMass === 0) return;
+    
+    const worldVerts = rigid.getWorldVerts();
+    const worldNormals = rigid.getWorldNormals();
+    const faces = rigid.mesh.faces;
+    
+    for (let p of this.particles) {
+      const invQuat = {x: -rigid.quat.x, y: -rigid.quat.y, z: -rigid.quat.z, w: rigid.quat.w};
+      const localP = qrotateVec(invQuat, v3sub(p.pos, rigid.pos));
+      
+      let maxPen = -Infinity;
+      let bestNormal = null;
+      
+      for (let fi = 0; fi < faces.length; fi++) {
+        const face = faces[fi];
+        const localFacePoint = rigid.mesh.localVerts[face[0]];
+        const localNormal = rigid.mesh.faceNormals[fi];
+        
+        const dist = v3dot(v3sub(localP, localFacePoint), localNormal);
+        
+        if (dist > maxPen) {
+          maxPen = dist;
+          bestNormal = worldNormals[fi];
+        }
+      }
+      
+      if (maxPen < 0.001) {
+        const penetration = -maxPen;
+        if (penetration > 0.0001) {
+          const push = v3scale(bestNormal, penetration * 1.02);
+          p.pos = v3add(p.pos, push);
+          p.prev = v3sub(p.pos, v3scale(v3sub(p.pos, p.prev), 0.3));
+          
+          const impulseMag = penetration * 18 * rigid.mass * 0.6;
+          const impulse = v3scale(bestNormal, -impulseMag);
+          rigid.applyImpulse(impulse, p.pos);
+        }
+      }
+    }
+  }
+}
+
+function p3lerp(a, b, t) {
+  return a * (1-t) + b * t;
+}
+
+// ============================================================
+// COLLISION DETECTION - SAT for convex polyhedra
+// ============================================================
+
+function projectOnAxis(worldVerts, axis) {
+  let min = Infinity, max = -Infinity;
+  for (let v of worldVerts) {
+    const proj = v3dot(v, axis);
+    if (proj < min) min = proj;
+    if (proj > max) max = proj;
+  }
+  return { min, max };
+}
+
+function satCollision(bodyA, bodyB) {
+  const vertsA = bodyA.getWorldVerts();
+  const vertsB = bodyB.getWorldVerts();
+  const normalsA = bodyA.getWorldNormals();
+  const normalsB = bodyB.getWorldNormals();
+  
+  let minOverlap = Infinity;
+  let collisionNormal = {x:0, y:1, z:0};
+  let collided = true;
+  
+  for (let n of normalsA) {
+    const projA = projectOnAxis(vertsA, n);
+    const projB = projectOnAxis(vertsB, n);
+    
+    const overlap = Math.min(projA.max, projB.max) - Math.max(projA.min, projB.min);
+    if (overlap <= 0) { collided = false; break; }
+    
+    if (overlap < minOverlap) {
+      minOverlap = overlap;
+      collisionNormal = n;
+    }
+  }
+  
+  if (!collided) return { collided: false };
+  
+  for (let n of normalsB) {
+    const projA = projectOnAxis(vertsA, n);
+    const projB = projectOnAxis(vertsB, n);
+    
+    const overlap = Math.min(projA.max, projB.max) - Math.max(projA.min, projB.min);
+    if (overlap <= 0) { collided = false; break; }
+    
+    if (overlap < minOverlap) {
+      minOverlap = overlap;
+      collisionNormal = n;
+    }
+  }
+  
+  if (!collided) return { collided: false };
+  
+  const centerDiff = v3sub(bodyB.pos, bodyA.pos);
+  if (v3dot(collisionNormal, centerDiff) < 0) {
+    collisionNormal = v3scale(collisionNormal, -1);
+  }
+  
+  return {
+    collided: true,
+    normal: collisionNormal,
+    depth: minOverlap,
+    contactPoint: v3add(bodyA.pos, v3scale(collisionNormal, minOverlap * 0.5))
+  };
+}
+
+function collideRigidWithGround(body, restitution, friction) {
+  const worldVerts = body.getWorldVerts();
+  let lowestY = Infinity;
+  let lowestVert = null;
+  
+  for (let v of worldVerts) {
+    if (v.y < lowestY) {
+      lowestY = v.y;
+      lowestVert = v;
+    }
+  }
+  
+  if (lowestY < 0) {
+    const penetration = -lowestY;
+    body.pos.y += penetration * 1.0;
+    
+    const contactPoint = lowestVert;
+    const r = v3sub(contactPoint, body.pos);
+    
+    const velAtContact = v3add(body.linVel, v3cross(body.angVel, r));
+    const normal = {x:0, y:1, z:0};
+    
+    const relVel = v3dot(velAtContact, normal);
+    if (relVel < 0) {
+      const invMass = body.invMass;
+      const invInertia = body.invInertia;
+      
+      const rCrossN = v3cross(r, normal);
+      const localRCrossN = qrotateVec({x:-body.quat.x,y:-body.quat.y,z:-body.quat.z,w:body.quat.w}, rCrossN);
+      const angEffect = v3dot(localRCrossN, body.applyMat3(invInertia, localRCrossN));
+      
+      const j = -(1 + restitution) * relVel / (invMass + angEffect);
+      
+      const impulse = v3scale(normal, j);
+      body.applyImpulse(impulse, contactPoint);
+      
+      const tangentVel = v3sub(velAtContact, v3scale(normal, relVel));
+      const tanLen = v3length(tangentVel);
+      if (tanLen > 0.001) {
+        const t = v3normalize(tangentVel);
+        const frictionImpulse = Math.min(body.friction * j, tanLen * 0.8);
+        body.applyImpulse(v3scale(t, -frictionImpulse), contactPoint);
+      }
+    }
+  }
+}
+
+// ============================================================
+// MAIN PHYSICS WORLD
+// ============================================================
+
+class PhysicsWorld {
+  constructor() {
+    this.rigidBodies = [];
+    this.softBodies = [];
+    this.impactParticles = [];
+    
+    this.gravity = {x: 0, y: -18, z: 0};
+    this.globalRestitution = 0.35;
+    this.globalFriction = 0.65;
+    this.globalDamping = 0.92;
+    
+    this.paused = false;
+    this.accumulatedTime = 0;
+    this.lastTime = performance.now();
+    
+    this.meshTemplates = {
+      tetra: buildMeshData(createTetrahedron()),
+      cube: buildMeshData(createCube()),
+      octa: buildMeshData(createOctahedron()),
+      icosa: buildMeshData(createIcosahedron()),
+      irregular: buildMeshData(createIrregularPolyhedron())
+    };
+  }
+  
+  reset() {
+    this.rigidBodies = [];
+    this.softBodies = [];
+    this.impactParticles = [];
+    
+    const templates = ['tetra', 'cube', 'octa', 'icosa', 'irregular'];
+    const colors = [
+      [0.95, 0.55, 0.4],
+      [0.4, 0.75, 0.95],
+      [0.6, 0.95, 0.55],
+      [0.95, 0.85, 0.4],
+      [0.7, 0.55, 0.95]
+    ];
+    
+    let y = 0.8;
+    for (let i = 0; i < 6; i++) {
+      const type = templates[i % templates.length];
+      const mesh = this.meshTemplates[type];
+      const pos = { 
+        x: (i % 3 - 1) * 1.8 + (Math.random() - 0.5) * 0.3, 
+        y: y, 
+        z: Math.floor(i / 3) * 1.6 - 0.8 + (Math.random() - 0.5) * 0.4 
+      };
+      
+      const body = new RigidBody(mesh, pos, qfromAxisAngle(
+        {x: Math.random()-0.5, y: Math.random()-0.5, z: Math.random()-0.5}, 
+        (Math.random() - 0.5) * 1.2
+      ), colors[i % colors.length]);
+      
+      const props = computeMassProperties(mesh.localVerts, mesh.faces);
+      body.mass = props.mass;
+      body.invMass = 1 / props.mass;
+      body.inertia = props.inertia;
+      body.invInertia = props.invInertia;
+      
+      body.restitution = this.globalRestitution;
+      body.friction = this.globalFriction;
+      
+      this.rigidBodies.push(body);
+      y += 2.2;
+    }
+    
+    const soft = new SoftBody();
+    soft.createSoftCube({x: -4.5, y: 3.5, z: 2.5}, 2.2, 3);
+    soft.stiffness = 3.5;
+    soft.damping = this.globalDamping;
+    this.softBodies.push(soft);
+  }
+  
+  step(dt) {
+    if (this.paused) return;
+    
+    dt = Math.min(dt, 0.033);
+    
+    for (let body of this.rigidBodies) {
+      if (body.sleeping) continue;
+      
+      body.linVel.y += this.gravity.y * dt;
+      
+      body.pos.x += body.linVel.x * dt;
+      body.pos.y += body.linVel.y * dt;
+      body.pos.z += body.linVel.z * dt;
+      
+      body.quat = qintegrate(body.quat, body.angVel, dt);
+      
+      body.linVel = v3scale(body.linVel, this.globalDamping);
+      body.angVel = v3scale(body.angVel, this.globalDamping * 0.98);
+      
+      collideRigidWithGround(body, body.restitution * this.globalRestitution, this.globalFriction);
+    }
+    
+    for (let i = 0; i < this.rigidBodies.length; i++) {
+      for (let j = i + 1; j < this.rigidBodies.length; j++) {
+        const a = this.rigidBodies[i];
+        const b = this.rigidBodies[j];
+        
+        const result = satCollision(a, b);
+        if (result.collided) {
+          this.resolveRigidCollision(a, b, result);
+          this.spawnImpactParticles(result.contactPoint, result.normal, 6);
+        }
+      }
+    }
+    
+    for (let soft of this.softBodies) {
+      soft.integrate(dt, this.gravity, this.globalDamping);
+      soft.solveConstraints(10 + Math.floor(soft.stiffness * 1.5));
+      soft.collideGround(this.globalRestitution, this.globalFriction);
+      
+      for (let rigid of this.rigidBodies) {
+        soft.collideWithRigid(rigid, this.globalRestitution);
+      }
+    }
+    
+    this.updateImpactParticles(dt);
+    
+    for (let body of this.rigidBodies) {
+      const speed = v3length(body.linVel) + v3length(body.angVel) * 0.5;
+      if (speed < 0.015) {
+        body.sleepTimer += dt;
+        if (body.sleepTimer > 0.8) body.sleeping = true;
+      } else {
+        body.sleepTimer = 0;
+        body.sleeping = false;
+      }
+    }
+  }
+  
+  resolveRigidCollision(a, b, result) {
+    const { normal, depth, contactPoint } = result;
+    
+    const totalInvMass = a.invMass + b.invMass;
+    if (totalInvMass > 0) {
+      const correction = v3scale(normal, depth * 0.6 / totalInvMass);
+      if (a.invMass > 0) a.pos = v3sub(a.pos, v3scale(correction, a.invMass));
+      if (b.invMass > 0) b.pos = v3add(b.pos, v3scale(correction, b.invMass));
+    }
+    
+    const rA = v3sub(contactPoint, a.pos);
+    const rB = v3sub(contactPoint, b.pos);
+    
+    const velA = v3add(a.linVel, v3cross(a.angVel, rA));
+    const velB = v3add(b.linVel, v3cross(b.angVel, rB));
+    const relVel = v3sub(velA, velB);
+    
+    const relVelN = v3dot(relVel, normal);
+    if (relVelN > 0) return;
+    
+    const e = (a.restitution + b.restitution) * 0.5 * this.globalRestitution;
+    
+    const rACrossN = v3cross(rA, normal);
+    const rBCrossN = v3cross(rB, normal);
+    
+    const invInertiaA = a.invInertia;
+    const invInertiaB = b.invInertia;
+    
+    const localRAcrossN_A = qrotateVec({x:-a.quat.x,y:-a.quat.y,z:-a.quat.z,w:a.quat.w}, rACrossN);
+    const localRAcrossN_B = qrotateVec({x:-b.quat.x,y:-b.quat.y,z:-b.quat.z,w:b.quat.w}, rBCrossN);
+    
+    const angA = v3dot(localRAcrossN_A, a.applyMat3(invInertiaA, localRAcrossN_A));
+    const angB = v3dot(localRAcrossN_B, b.applyMat3(invInertiaB, localRAcrossN_B));
+    
+    const denom = a.invMass + b.invMass + angA + angB;
+    if (denom < EPS) return;
+    
+    const j = -(1 + e) * relVelN / denom;
+    
+    const impulse = v3scale(normal, j);
+    
+    a.applyImpulse(v3scale(impulse, 1), contactPoint);
+    b.applyImpulse(v3scale(impulse, -1), contactPoint);
+    
+    const relVelT = v3sub(relVel, v3scale(normal, relVelN));
+    const relVelTLen = v3length(relVelT);
+    
+    if (relVelTLen > 0.001) {
+      const t = v3normalize(relVelT);
+      const maxFriction = this.globalFriction * Math.abs(j);
+      
+      const rACrossT = v3cross(rA, t);
+      const rBCrossT = v3cross(rB, t);
+      
+      const localT_A = qrotateVec({x:-a.quat.x,y:-a.quat.y,z:-a.quat.z,w:a.quat.w}, rACrossT);
+      const localT_B = qrotateVec({x:-b.quat.x,y:-b.quat.y,z:-b.quat.z,w:b.quat.w}, rBCrossT);
+      
+      const angTA = v3dot(localT_A, a.applyMat3(invInertiaA, localT_A));
+      const angTB = v3dot(localT_B, b.applyMat3(invInertiaB, localT_B));
+      
+      const denomT = a.invMass + b.invMass + angTA + angTB;
+      if (denomT > EPS) {
+        const jT = -relVelTLen / denomT;
+        const frictionJ = Math.max(-maxFriction, Math.min(maxFriction, jT));
+        
+        const frictionImpulse = v3scale(t, frictionJ);
+        a.applyImpulse(v3scale(frictionImpulse, 1), contactPoint);
+        b.applyImpulse(v3scale(frictionImpulse, -1), contactPoint);
+      }
+    }
+  }
+  
+  spawnImpactParticles(position, normal, count = 8) {
+    for (let i = 0; i < count; i++) {
+      const spread = 2.8;
+      const vel = v3add(
+        v3scale(normal, 1.5 + Math.random() * 3),
+        {x: (Math.random()-0.5)*spread, y: (Math.random()-0.5)*spread*0.6, z: (Math.random()-0.5)*spread}
+      );
+      
+      this.impactParticles.push({
+        pos: {...position},
+        vel: vel,
+        life: 0.6 + Math.random() * 0.6,
+        size: 0.04 + Math.random() * 0.05,
+        color: [1.0, 0.85, 0.5]
+      });
+    }
+  }
+  
+  updateImpactParticles(dt) {
+    for (let i = this.impactParticles.length - 1; i >= 0; i--) {
+      const p = this.impactParticles[i];
+      p.pos.x += p.vel.x * dt;
+      p.pos.y += p.vel.y * dt;
+      p.pos.z += p.vel.z * dt;
+      
+      p.vel.y += this.gravity.y * dt * 0.6;
+      p.vel = v3scale(p.vel, 0.88);
+      
+      p.life -= dt;
+      if (p.life <= 0) {
+        this.impactParticles.splice(i, 1);
+      }
+    }
+  }
+  
+  raycast(origin, direction) {
+    let closestT = Infinity;
+    let hitBody = null;
+    let hitPoint = null;
+    
+    for (let body of this.rigidBodies) {
+      const worldVerts = body.getWorldVerts();
+      const faces = body.mesh.faces;
+      
+      for (let fi = 0; fi < faces.length; fi++) {
+        const face = faces[fi];
+        for (let t = 1; t < face.length - 1; t++) {
+          const v0 = worldVerts[face[0]];
+          const v1 = worldVerts[face[t]];
+          const v2 = worldVerts[face[t+1]];
+          
+          const edge1 = v3sub(v1, v0);
+          const edge2 = v3sub(v2, v0);
+          const h = v3cross(direction, edge2);
+          const a = v3dot(edge1, h);
+          
+          if (Math.abs(a) < EPS) continue;
+          
+          const f = 1.0 / a;
+          const s = v3sub(origin, v0);
+          const u = f * v3dot(s, h);
+          if (u < 0 || u > 1) continue;
+          
+          const q = v3cross(s, edge1);
+          const v = f * v3dot(direction, q);
+          if (v < 0 || u + v > 1) continue;
+          
+          const tVal = f * v3dot(edge2, q);
+          if (tVal > EPS && tVal < closestT) {
+            closestT = tVal;
+            hitBody = body;
+            hitPoint = v3add(origin, v3scale(direction, tVal));
+          }
+        }
+      }
+    }
+    
+    return hitBody ? { body: hitBody, point: hitPoint, t: closestT } : null;
+  }
+  
+  applyThrowImpulse(body, point, impulseDir, magnitude) {
+    const impulse = v3scale(v3normalize(impulseDir), magnitude);
+    body.applyImpulse(impulse, point);
+    body.sleeping = false;
+    body.sleepTimer = 0;
+    
+    this.spawnImpactParticles(point, v3normalize(impulseDir), 12);
+  }
+}
+
+// ============================================================
+// WEBGL2 RENDERING SETUP
+// ============================================================
+
+let shaderProgram, depthProgram;
+let vaoCache = new Map();
+
+function createShader(type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+    return null;
+  }
+  return shader;
+}
+
+function createProgram(vsSource, fsSource) {
+  const vs = createShader(gl.VERTEX_SHADER, vsSource);
+  const fs = createShader(gl.FRAGMENT_SHADER, fsSource);
+  if (!vs || !fs) return null;
+  
+  const program = gl.createProgram();
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error('Program link error:', gl.getProgramInfoLog(program));
+    return null;
+  }
+  return program;
+}
+
+const vertexShaderSource = `#version 300 es
+in vec3 aPosition;
+in vec3 aNormal;
+
+uniform mat4 uModelMatrix;
+uniform mat4 uViewMatrix;
+uniform mat4 uProjectionMatrix;
+uniform mat3 uNormalMatrix;
+uniform mat4 uLightSpaceMatrix;
+
+out vec3 vNormal;
+out vec3 vWorldPos;
+out vec4 vLightSpacePos;
+
+void main() {
+  vec4 worldPos = uModelMatrix * vec4(aPosition, 1.0);
+  vWorldPos = worldPos.xyz;
+  vNormal = normalize(uNormalMatrix * aNormal);
+  vLightSpacePos = uLightSpaceMatrix * worldPos;
+  gl_Position = uProjectionMatrix * uViewMatrix * worldPos;
+}
+`;
+
+const fragmentShaderSource = `#version 300 es
+precision highp float;
+
+in vec3 vNormal;
+in vec3 vWorldPos;
+in vec4 vLightSpacePos;
+
+uniform vec3 uLightDir;
+uniform vec3 uCameraPos;
+uniform vec3 uColor;
+uniform float uShadowBias;
+uniform sampler2D uShadowMap;
+uniform int uRenderMode;
+
+out vec4 fragColor;
+
+float shadowCalculation(vec4 lightSpacePos) {
+  vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
+  projCoords = projCoords * 0.5 + 0.5;
+  
+  if (projCoords.z > 1.0) return 0.0;
+  
+  float currentDepth = projCoords.z;
+  float shadow = 0.0;
+  float bias = uShadowBias;
+  
+  vec2 texelSize = 1.0 / vec2(textureSize(uShadowMap, 0));
+  for (int x = -1; x <= 1; ++x) {
+    for (int y = -1; y <= 1; ++y) {
+      float pcfDepth = texture(uShadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+      shadow += (currentDepth - bias > pcfDepth) ? 1.0 : 0.0;
+    }
+  }
+  shadow /= 9.0;
+  return shadow;
+}
+
+void main() {
+  if (uRenderMode == 1) {
+    fragColor = vec4(0.15, 0.18, 0.22, 1.0);
+    return;
+  }
+  
+  vec3 normal = normalize(vNormal);
+  vec3 lightDir = normalize(-uLightDir);
+  
+  float ambientStrength = 0.22;
+  vec3 ambient = ambientStrength * uColor;
+  
+  float diff = max(dot(normal, lightDir), 0.0);
+  vec3 diffuse = diff * uColor * 1.1;
+  
+  vec3 viewDir = normalize(uCameraPos - vWorldPos);
+  vec3 reflectDir = reflect(-lightDir, normal);
+  float spec = pow(max(dot(viewDir, reflectDir), 0.0), 28.0);
+  vec3 specular = spec * vec3(0.6, 0.65, 0.7) * 0.7;
+  
+  float shadow = shadowCalculation(vLightSpacePos);
+  float shadowFactor = 1.0 - (shadow * 0.65);
+  
+  vec3 result = (ambient + diffuse * shadowFactor) + specular * shadowFactor;
+  
+  float rim = 1.0 - max(dot(viewDir, normal), 0.0);
+  rim = pow(rim, 3.0) * 0.35;
+  result += rim * vec3(0.4, 0.45, 0.55);
+  
+  fragColor = vec4(result, 1.0);
+}
+`;
+
+const depthVertexShader = `#version 300 es
+in vec3 aPosition;
+uniform mat4 uLightSpaceMatrix;
+uniform mat4 uModelMatrix;
+
+void main() {
+  gl_Position = uLightSpaceMatrix * uModelMatrix * vec4(aPosition, 1.0);
+}
+`;
+
+const depthFragmentShader = `#version 300 es
+precision highp float;
+void main() {
+}
+`;
+
+function initShaders() {
+  shaderProgram = createProgram(vertexShaderSource, fragmentShaderSource);
+  depthProgram = createProgram(depthVertexShader, depthFragmentShader);
+  
+  if (!shaderProgram || !depthProgram) {
+    console.error('Failed to create shader programs');
+  }
+}
+
+function createMeshVAO(meshData) {
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  
+  const posBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, meshData.positions, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  
+  const normBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, normBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, meshData.normals, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+  
+  const indexBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, meshData.indices, gl.STATIC_DRAW);
+  
+  const edgeBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, edgeBuffer);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, meshData.edgeIndices, gl.STATIC_DRAW);
+  
+  gl.bindVertexArray(null);
+  
+  return {
+    vao,
+    posBuffer,
+    normBuffer,
+    indexBuffer,
+    edgeBuffer,
+    triCount: meshData.triCount,
+    edgeCount: meshData.edgeIndices.length
+  };
+}
+
+// ============================================================
+// SHADOW MAPPING
+// ============================================================
+
+let shadowFBO, shadowTexture;
+const SHADOW_SIZE = 1024;
+
+function initShadowMap() {
+  shadowFBO = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFBO);
+  
+  shadowTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, shadowTexture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SHADOW_SIZE, SHADOW_SIZE, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shadowTexture, 0);
+  
+  gl.drawBuffers([gl.NONE]);
+  gl.readBuffer(gl.NONE);
+  
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+    console.warn('Shadow framebuffer incomplete');
+  }
+  
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+// ============================================================
+// CAMERA & INTERACTION
+// ============================================================
+
+let camera = {
+  pos: {x: 0, y: 8, z: 14},
+  target: {x: 0, y: 3, z: 0},
+  yaw: -0.6,
+  pitch: -0.35,
+  distance: 16
+};
+
+let isDragging = false;
+let isInteracting = false;
+let lastMouseX = 0, lastMouseY = 0;
+let draggedBody = null;
+let dragStartPoint = null;
+let dragStartMouse = {x:0, y:0};
+
+function updateCamera() {
+  const cosPitch = Math.cos(camera.pitch);
+  const sinPitch = Math.sin(camera.pitch);
+  const cosYaw = Math.cos(camera.yaw);
+  const sinYaw = Math.sin(camera.yaw);
+  
+  camera.pos.x = camera.target.x + camera.distance * cosPitch * sinYaw;
+  camera.pos.y = camera.target.y + camera.distance * sinPitch;
+  camera.pos.z = camera.target.z + camera.distance * cosPitch * cosYaw;
+}
+
+function getViewMatrix() {
+  return m4lookAt(camera.pos, camera.target, {x:0, y:1, z:0});
+}
+
+function getProjectionMatrix() {
+  const aspect = canvas.width / canvas.height;
+  return m4perspective(55 * Math.PI / 180, aspect, 0.1, 120);
+}
+
+function getMouseRay(mouseX, mouseY) {
+  const rect = canvas.getBoundingClientRect();
+  const ndcX = ((mouseX - rect.left) / rect.width) * 2 - 1;
+  const ndcY = -((mouseY - rect.top) / rect.height) * 2 + 1;
+  
+  const proj = getProjectionMatrix();
+  const view = getViewMatrix();
+  const invProj = m4inverse(proj);
+  const invView = m4inverse(view);
+  
+  const nearPoint = {x: ndcX, y: ndcY, z: -1};
+  const farPoint = {x: ndcX, y: ndcY, z: 1};
+  
+  const viewNear = {
+    x: nearPoint.x * invProj[0] + nearPoint.y * invProj[4] + nearPoint.z * invProj[8] + invProj[12],
+    y: nearPoint.x * invProj[1] + nearPoint.y * invProj[5] + nearPoint.z * invProj[9] + invProj[13],
+    z: nearPoint.x * invProj[2] + nearPoint.y * invProj[6] + nearPoint.z * invProj[10] + invProj[14]
+  };
+  
+  const viewFar = {
+    x: farPoint.x * invProj[0] + farPoint.y * invProj[4] + farPoint.z * invProj[8] + invProj[12],
+    y: farPoint.x * invProj[1] + farPoint.y * invProj[5] + farPoint.z * invProj[9] + invProj[13],
+    z: farPoint.x * invProj[2] + farPoint.y * invProj[6] + farPoint.z * invProj[10] + invProj[14]
+  };
+  
+  const worldNear = {
+    x: viewNear.x * invView[0] + viewNear.y * invView[4] + viewNear.z * invView[8] + invView[12],
+    y: viewNear.x * invView[1] + viewNear.y * invView[5] + viewNear.z * invView[9] + invView[13],
+    z: viewNear.x * invView[2] + viewNear.y * invView[6] + viewNear.z * invView[10] + invView[14]
+  };
+  
+  const worldFar = {
+    x: viewFar.x * invView[0] + viewFar.y * invView[4] + viewFar.z * invView[8] + invView[12],
+    y: viewFar.x * invView[1] + viewFar.y * invView[5] + viewFar.z * invView[9] + invView[13],
+    z: viewFar.x * invView[2] + viewFar.y * invView[6] + viewFar.z * invView[10] + invView[14]
+  };
+  
+  const dir = v3normalize(v3sub(worldFar, worldNear));
+  return { origin: camera.pos, direction: dir };
+}
+
+// ============================================================
+// RENDER LOOP
+// ============================================================
+
+let world = new PhysicsWorld();
+let wireframeEnabled = false;
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let currentFps = 60;
+
+let lightDir = v3normalize({x: 0.45, y: -1.0, z: 0.35});
+
+function resizeCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(window.innerWidth * dpr);
+  canvas.height = Math.floor(window.innerHeight * dpr);
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+
+function render() {
+  const now = performance.now();
+  const dt = Math.min((now - world.lastTime) / 1000, 0.05);
+  world.lastTime = now;
+  
+  if (!world.paused) {
+    const substeps = 3;
+    const subDt = dt / substeps;
+    for (let s = 0; s < substeps; s++) {
+      world.step(subDt);
+    }
+  }
+  
+  frameCount++;
+  if (now - lastFpsTime > 500) {
+    currentFps = Math.round(frameCount * 1000 / (now - lastFpsTime));
+    document.getElementById('fps').textContent = currentFps;
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+  
+  document.getElementById('bodyCount').textContent = world.rigidBodies.length;
+  let totalParticles = world.impactParticles.length;
+  for (let s of world.softBodies) totalParticles += s.particles.length;
+  document.getElementById('particleCount').textContent = totalParticles;
+  
+  // Shadow pass
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFBO);
+  gl.viewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LESS);
+  
+  gl.useProgram(depthProgram);
+  
+  const lightTarget = {x: 0, y: 4, z: 0};
+  const lightPos = v3add(lightTarget, v3scale(lightDir, -22));
+  const lightView = m4lookAt(lightPos, lightTarget, {x:0, y:1, z:0});
+  const lightOrtho = [
+    1/18, 0, 0, 0,
+    0, 1/14, 0, 0,
+    0, 0, -1/60, 0,
+    0, 0, 0, 1
+  ];
+  const lightSpaceMatrix = m4multiply(lightOrtho, lightView);
+  
+  const depthLoc_model = gl.getUniformLocation(depthProgram, 'uModelMatrix');
+  const depthLoc_light = gl.getUniformLocation(depthProgram, 'uLightSpaceMatrix');
+  
+  for (let body of world.rigidBodies) {
+    if (!vaoCache.has(body)) {
+      const vaoInfo = createMeshVAO(body.mesh);
+      vaoCache.set(body, vaoInfo);
+    }
+    const vaoInfo = vaoCache.get(body);
+    
+    const model = qtoMat4(body.quat, body.pos);
+    
+    gl.bindVertexArray(vaoInfo.vao);
+    gl.uniformMatrix4fv(depthLoc_model, false, model);
+    gl.uniformMatrix4fv(depthLoc_light, false, lightSpaceMatrix);
+    gl.drawElements(gl.TRIANGLES, vaoInfo.triCount * 3, gl.UNSIGNED_SHORT, 0);
+  }
+  
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  
+  // Main render pass
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(0.06, 0.07, 0.09, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LESS);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+  
+  const viewMatrix = getViewMatrix();
+  const projMatrix = getProjectionMatrix();
+  const cameraPos = camera.pos;
+  
+  gl.useProgram(shaderProgram);
+  
+  const uView = gl.getUniformLocation(shaderProgram, 'uViewMatrix');
+  const uProj = gl.getUniformLocation(shaderProgram, 'uProjectionMatrix');
+  const uLightDir = gl.getUniformLocation(shaderProgram, 'uLightDir');
+  const uCameraPos = gl.getUniformLocation(shaderProgram, 'uCameraPos');
+  const uShadowBias = gl.getUniformLocation(shaderProgram, 'uShadowBias');
+  const uShadowMap = gl.getUniformLocation(shaderProgram, 'uShadowMap');
+  const uLightSpace = gl.getUniformLocation(shaderProgram, 'uLightSpaceMatrix');
+  const uRenderMode = gl.getUniformLocation(shaderProgram, 'uRenderMode');
+  
+  gl.uniformMatrix4fv(uView, false, viewMatrix);
+  gl.uniformMatrix4fv(uProj, false, projMatrix);
+  gl.uniform3f(uLightDir, lightDir.x, lightDir.y, lightDir.z);
+  gl.uniform3f(uCameraPos, cameraPos.x, cameraPos.y, cameraPos.z);
+  gl.uniform1f(uShadowBias, 0.0025);
+  gl.uniformMatrix4fv(uLightSpace, false, lightSpaceMatrix);
+  
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, shadowTexture);
+  gl.uniform1i(uShadowMap, 0);
+  
+  renderGround(viewMatrix, projMatrix, lightSpaceMatrix);
+  
+  gl.uniform1i(uRenderMode, 0);
+  
+  for (let body of world.rigidBodies) {
+    if (!vaoCache.has(body)) {
+      const vaoInfo = createMeshVAO(body.mesh);
+      vaoCache.set(body, vaoInfo);
+    }
+    const vaoInfo = vaoCache.get(body);
+    
+    const modelMatrix = qtoMat4(body.quat, body.pos);
+    const normalMatrix = qtoMat3(body.quat);
+    
+    const uModel = gl.getUniformLocation(shaderProgram, 'uModelMatrix');
+    const uNormal = gl.getUniformLocation(shaderProgram, 'uNormalMatrix');
+    const uColor = gl.getUniformLocation(shaderProgram, 'uColor');
+    
+    gl.uniformMatrix4fv(uModel, false, modelMatrix);
+    gl.uniformMatrix3fv(uNormal, false, normalMatrix);
+    gl.uniform3fv(uColor, body.color);
+    
+    gl.bindVertexArray(vaoInfo.vao);
+    
+    gl.drawElements(gl.TRIANGLES, vaoInfo.triCount * 3, gl.UNSIGNED_SHORT, 0);
+    
+    if (wireframeEnabled) {
+      gl.uniform1i(uRenderMode, 1);
+      gl.enable(gl.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(-1.0, -2.0);
+      
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, vaoInfo.edgeBuffer);
+      gl.drawElements(gl.LINES, vaoInfo.edgeCount, gl.UNSIGNED_SHORT, 0);
+      
+      gl.disable(gl.POLYGON_OFFSET_FILL);
+      gl.uniform1i(uRenderMode, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, vaoInfo.indexBuffer);
+    }
+  }
+  
+  renderSoftBody();
+  renderImpactParticles();
+  
+  const statusEl = document.getElementById('status');
+  if (world.paused) {
+    statusEl.textContent = 'PAUSED • Click Reset or Play to continue';
+    statusEl.style.color = '#f59e0b';
+  } else {
+    statusEl.textContent = 'WebGL2 • Real-time Physics';
+    statusEl.style.color = '#64748b';
+  }
+  
+  requestAnimationFrame(render);
+}
+
+function renderGround(viewMatrix, projMatrix, lightSpaceMatrix) {
+  if (!window.groundVAO) {
+    const groundVerts = new Float32Array([
+      -25, 0, -25,  0,1,0,
+       25, 0, -25,  0,1,0,
+       25, 0,  25,  0,1,0,
+      -25, 0,  25,  0,1,0
+    ]);
+    const groundIndices = new Uint16Array([0,1,2, 0,2,3]);
+    
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, groundVerts, gl.STATIC_DRAW);
+    
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+    
+    const ibo = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, groundIndices, gl.STATIC_DRAW);
+    
+    window.groundVAO = {vao, triCount: 2};
+  }
+  
+  gl.bindVertexArray(window.groundVAO.vao);
+  
+  const model = m4identity();
+  const uModel = gl.getUniformLocation(shaderProgram, 'uModelMatrix');
+  const uNormal = gl.getUniformLocation(shaderProgram, 'uNormalMatrix');
+  const uColor = gl.getUniformLocation(shaderProgram, 'uColor');
+  const uRenderMode = gl.getUniformLocation(shaderProgram, 'uRenderMode');
+  
+  gl.uniformMatrix4fv(uModel, false, model);
+  gl.uniformMatrix3fv(uNormal, false, [1,0,0, 0,1,0, 0,0,1]);
+  gl.uniform3f(uColor, 0.25, 0.28, 0.32);
+  gl.uniform1i(uRenderMode, 0);
+  
+  gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+  
+  gl.lineWidth(1.0);
+  gl.uniform3f(uColor, 0.35, 0.38, 0.42);
+  gl.uniform1i(uRenderMode, 1);
+  
+  const gridVAO = window.gridVAO || createGroundGrid();
+  gl.bindVertexArray(gridVAO);
+  gl.drawArrays(gl.LINES, 0, 84);
+  gl.bindVertexArray(null);
+  
+  gl.uniform1i(uRenderMode, 0);
+}
+
+function createGroundGrid() {
+  const lines = [];
+  const size = 24;
+  const step = 3;
+  for (let x = -size; x <= size; x += step) {
+    lines.push(x, 0.01, -size, x, 0.01, size);
+  }
+  for (let z = -size; z <= size; z += step) {
+    lines.push(-size, 0.01, z, size, 0.01, z);
+  }
+  const gridVerts = new Float32Array(lines);
+  
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, gridVerts, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  window.gridVAO = vao;
+  return vao;
+}
+
+function renderSoftBody() {
+  for (let soft of world.softBodies) {
+    if (soft.particles.length === 0) continue;
+    
+    const positions = [];
+    for (let p of soft.particles) {
+      positions.push(p.pos.x, p.pos.y, p.pos.z);
+    }
+    const posArray = new Float32Array(positions);
+    
+    if (!soft.pointVAO) {
+      soft.pointVAO = gl.createVertexArray();
+      soft.pointBuffer = gl.createBuffer();
+    }
+    
+    gl.bindVertexArray(soft.pointVAO);
+    gl.bindBuffer(gl.ARRAY_BUFFER, soft.pointBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, posArray, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    
+    gl.useProgram(shaderProgram);
+    
+    const uModel = gl.getUniformLocation(shaderProgram, 'uModelMatrix');
+    const uNormal = gl.getUniformLocation(shaderProgram, 'uNormalMatrix');
+    const uColor = gl.getUniformLocation(shaderProgram, 'uColor');
+    const uRenderMode = gl.getUniformLocation(shaderProgram, 'uRenderMode');
+    
+    gl.uniformMatrix4fv(uModel, false, m4identity());
+    gl.uniformMatrix3fv(uNormal, false, [1,0,0,0,1,0,0,0,1]);
+    gl.uniform3fv(uColor, soft.color);
+    gl.uniform1i(uRenderMode, 0);
+    
+    gl.pointSize(5.0);
+    gl.drawArrays(gl.POINTS, 0, soft.particles.length);
+    
+    if (wireframeEnabled || soft.particles.length < 40) {
+      const lineVerts = [];
+      for (let c of soft.constraints) {
+        const p1 = soft.particles[c.i1].pos;
+        const p2 = soft.particles[c.i2].pos;
+        lineVerts.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+      }
+      if (lineVerts.length > 0) {
+        const lineArray = new Float32Array(lineVerts);
+        if (!soft.lineBuffer) soft.lineBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, soft.lineBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, lineArray, gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        
+        gl.uniform3f(uColor, 0.3, 0.6, 0.45);
+        gl.uniform1i(uRenderMode, 1);
+        gl.drawArrays(gl.LINES, 0, lineVerts.length / 3);
+      }
+    }
+    
+    gl.bindVertexArray(null);
+  }
+}
+
+function renderImpactParticles() {
+  if (world.impactParticles.length === 0) return;
+  
+  gl.useProgram(shaderProgram);
+  const uColor = gl.getUniformLocation(shaderProgram, 'uColor');
+  const uRenderMode = gl.getUniformLocation(shaderProgram, 'uRenderMode');
+  gl.uniform1i(uRenderMode, 0);
+  
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  
+  for (let i = 0; i < world.impactParticles.length; i++) {
+    const p = world.impactParticles[i];
+    gl.uniform3f(uColor, p.color[0], p.color[1], p.color[2]);
+    gl.pointSize(p.size * 18 * (p.life + 0.3));
+    
+    // Draw individual points
+    if (!window.tempParticleVAO) {
+      window.tempParticleVAO = gl.createVertexArray();
+      window.tempParticleBuffer = gl.createBuffer();
+    }
+    gl.bindVertexArray(window.tempParticleVAO);
+    gl.bindBuffer(gl.ARRAY_BUFFER, window.tempParticleBuffer);
+    const posData = new Float32Array([p.pos.x, p.pos.y, p.pos.z]);
+    gl.bufferData(gl.ARRAY_BUFFER, posData, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    
+    gl.drawArrays(gl.POINTS, 0, 1);
+  }
+  
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(null);
+}
+
+// ============================================================
+// UI & EVENT HANDLERS
+// ============================================================
+
+function setupUI() {
+  const sliders = {
+    gravity: document.getElementById('gravitySlider'),
+    restitution: document.getElementById('restitutionSlider'),
+    friction: document.getElementById('frictionSlider'),
+    stiffness: document.getElementById('stiffnessSlider'),
+    damping: document.getElementById('dampingSlider')
+  };
+  
+  const vals = {
+    gravity: document.getElementById('gravityVal'),
+    restitution: document.getElementById('restitutionVal'),
+    friction: document.getElementById('frictionVal'),
+    stiffness: document.getElementById('stiffnessVal'),
+    damping: document.getElementById('dampingVal')
+  };
+  
+  function updateWorldFromSliders() {
+    world.gravity.y = parseFloat(sliders.gravity.value);
+    world.globalRestitution = parseFloat(sliders.restitution.value);
+    world.globalFriction = parseFloat(sliders.friction.value);
+    world.globalDamping = parseFloat(sliders.damping.value);
+    
+    for (let b of world.rigidBodies) {
+      b.restitution = world.globalRestitution;
+      b.friction = world.globalFriction;
+    }
+    for (let s of world.softBodies) {
+      s.stiffness = parseFloat(sliders.stiffness.value);
+      s.damping = world.globalDamping;
+    }
+  }
+  
+  Object.keys(sliders).forEach(key => {
+    const s = sliders[key];
+    const v = vals[key];
+    
+    s.addEventListener('input', () => {
+      let val = parseFloat(s.value);
+      if (key === 'gravity') val = val.toFixed(1);
+      else if (key === 'damping' || key === 'restitution' || key === 'friction') val = val.toFixed(2);
+      else val = val.toFixed(1);
+      v.textContent = val;
+      updateWorldFromSliders();
+    });
+  });
+  
+  vals.gravity.textContent = sliders.gravity.value;
+  vals.restitution.textContent = parseFloat(sliders.restitution.value).toFixed(2);
+  vals.friction.textContent = parseFloat(sliders.friction.value).toFixed(2);
+  vals.stiffness.textContent = parseFloat(sliders.stiffness.value).toFixed(1);
+  vals.damping.textContent = parseFloat(sliders.damping.value).toFixed(2);
+  
+  const pauseBtn = document.getElementById('pauseBtn');
+  pauseBtn.addEventListener('click', () => {
+    world.paused = !world.paused;
+    pauseBtn.textContent = world.paused ? '▶ Play' : '⏸ Pause';
+  });
+  
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    world.reset();
+    vaoCache.clear();
+    updateWorldFromSliders();
+  });
+  
+  const wireChk = document.getElementById('wireframeChk');
+  wireChk.addEventListener('change', () => {
+    wireframeEnabled = wireChk.checked;
+  });
+  
+  document.getElementById('presetRigid').addEventListener('click', () => {
+    world.gravity.y = -22;
+    world.globalRestitution = 0.15;
+    world.globalFriction = 0.85;
+    world.globalDamping = 0.88;
+    sliders.gravity.value = -22;
+    sliders.restitution.value = 0.15;
+    sliders.friction.value = 0.85;
+    sliders.damping.value = 0.88;
+    vals.gravity.textContent = '-22.0';
+    vals.restitution.textContent = '0.15';
+    vals.friction.textContent = '0.85';
+    vals.damping.textContent = '0.88';
+    
+    world.rigidBodies = [];
+    world.softBodies = [];
+    const templates = ['tetra', 'cube', 'octa', 'icosa', 'irregular', 'cube'];
+    const colors = [[0.95,0.5,0.35],[0.35,0.75,0.95],[0.55,0.95,0.5],[0.95,0.85,0.35],[0.65,0.5,0.95],[0.4,0.85,0.7]];
+    
+    let y = 0.9;
+    for (let i = 0; i < 9; i++) {
+      const type = templates[i % templates.length];
+      const mesh = world.meshTemplates[type];
+      const pos = {x: (i%4 - 1.5)*1.6 + (Math.random()-0.5)*0.2, y: y, z: Math.floor(i/4)*1.8 - 1.2};
+      const body = new RigidBody(mesh, pos, qfromAxisAngle({x:Math.random()-0.5,y:0.2,z:Math.random()-0.5}, Math.random()*1.8), colors[i%colors.length]);
+      const props = computeMassProperties(mesh.localVerts, mesh.faces);
+      body.mass = props.mass; body.invMass = 1/props.mass;
+      body.inertia = props.inertia; body.invInertia = props.invInertia;
+      body.restitution = 0.15; body.friction = 0.85;
+      world.rigidBodies.push(body);
+      y += 1.85;
+    }
+    vaoCache.clear();
+  });
+  
+  document.getElementById('presetSoft').addEventListener('click', () => {
+    world.gravity.y = -9.5;
+    world.globalRestitution = 0.55;
+    world.globalDamping = 0.96;
+    sliders.gravity.value = -9.5;
+    sliders.restitution.value = 0.55;
+    sliders.damping.value = 0.96;
+    vals.gravity.textContent = '-9.5';
+    vals.restitution.textContent = '0.55';
+    vals.damping.textContent = '0.96';
+    
+    world.rigidBodies = [];
+    world.softBodies = [];
+    
+    const templates = ['octa', 'irregular', 'cube'];
+    for (let i = 0; i < 3; i++) {
+      const mesh = world.meshTemplates[templates[i]];
+      const pos = {x: (i-1)*3.5, y: 1.2, z: -1.5};
+      const body = new RigidBody(mesh, pos, qidentity(), [0.6,0.7,0.85]);
+      const props = computeMassProperties(mesh.localVerts, mesh.faces);
+      body.mass = props.mass * 1.5; body.invMass = 1/body.mass;
+      body.inertia = props.inertia; body.invInertia = props.invInertia;
+      world.rigidBodies.push(body);
+    }
+    
+    const soft = new SoftBody();
+    soft.createSoftCube({x: 0, y: 5, z: 3}, 3.5, 4);
+    soft.stiffness = parseFloat(sliders.stiffness.value);
+    world.softBodies.push(soft);
+    
+    vaoCache.clear();
+  });
+  
+  document.getElementById('presetDestroy').addEventListener('click', () => {
+    world.gravity.y = -14;
+    world.globalRestitution = 0.75;
+    world.globalFriction = 0.25;
+    sliders.gravity.value = -14;
+    sliders.restitution.value = 0.75;
+    sliders.friction.value = 0.25;
+    vals.gravity.textContent = '-14.0';
+    vals.restitution.textContent = '0.75';
+    vals.friction.textContent = '0.25';
+    
+    world.rigidBodies = [];
+    const templates = ['tetra', 'icosa', 'irregular'];
+    for (let i = 0; i < 7; i++) {
+      const mesh = world.meshTemplates[templates[i % 3]];
+      const pos = {x: (Math.random()-0.5)*8, y: 2 + i*1.6, z: (Math.random()-0.5)*6};
+      const body = new RigidBody(mesh, pos, qfromAxisAngle({x:1,y:0.3,z:0.8}, Math.random()*6), 
+        [0.95, 0.6 + Math.random()*0.3, 0.4]);
+      const props = computeMassProperties(mesh.localVerts, mesh.faces);
+      body.mass = props.mass; body.invMass = 1/props.mass;
+      body.inertia = props.inertia; body.invInertia = props.invInertia;
+      body.restitution = 0.75; body.friction = 0.25;
+      body.linVel = {x: (Math.random()-0.5)*6, y: -2, z: (Math.random()-0.5)*4};
+      body.angVel = {x: (Math.random()-0.5)*8, y: (Math.random()-0.5)*6, z: (Math.random()-0.5)*8};
+      world.rigidBodies.push(body);
+    }
+    vaoCache.clear();
+  });
+  
+  canvas.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mouseup', onMouseUp);
+  window.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  
+  canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+  canvas.addEventListener('touchend', handleTouchEnd);
+  
+  window.addEventListener('keydown', (e) => {
+    if (e.key === ' ') {
+      e.preventDefault();
+      world.paused = !world.paused;
+      document.getElementById('pauseBtn').textContent = world.paused ? '▶ Play' : '⏸ Pause';
+    }
+    if (e.key.toLowerCase() === 'r') {
+      world.reset();
+      vaoCache.clear();
+    }
+    if (e.key.toLowerCase() === 'w') {
+      wireframeEnabled = !wireframeEnabled;
+      document.getElementById('wireframeChk').checked = wireframeEnabled;
+    }
+  });
+  
+  setTimeout(() => {
+    world.reset();
+    sliders.gravity.value = world.gravity.y;
+    sliders.restitution.value = world.globalRestitution;
+    sliders.friction.value = world.globalFriction;
+    sliders.damping.value = world.globalDamping;
+    vals.gravity.textContent = world.gravity.y.toFixed(1);
+    vals.restitution.textContent = world.globalRestitution.toFixed(2);
+    vals.friction.textContent = world.globalFriction.toFixed(2);
+    vals.damping.textContent = world.globalDamping.toFixed(2);
+  }, 50);
+}
+
+function onMouseDown(e) {
+  lastMouseX = e.clientX;
+  lastMouseY = e.clientY;
+  isDragging = true;
+  
+  if (e.button === 0) {
+    const ray = getMouseRay(e.clientX, e.clientY);
+    const hit = world.raycast(ray.origin, ray.direction);
+    
+    if (hit && hit.body) {
+      isInteracting = true;
+      draggedBody = hit.body;
+      dragStartPoint = hit.point;
+      dragStartMouse = {x: e.clientX, y: e.clientY};
+      draggedBody.sleeping = false;
+    } else {
+      isInteracting = false;
+      draggedBody = null;
+    }
+  } else if (e.button === 2) {
+    camera.yaw = -0.6;
+    camera.pitch = -0.35;
+    camera.distance = 16;
+    camera.target = {x: 0, y: 3, z: 0};
+  }
+}
+
+function onMouseUp(e) {
+  if (isInteracting && draggedBody && dragStartPoint) {
+    const dx = (e.clientX - dragStartMouse.x) * 0.035;
+    const dy = (e.clientY - dragStartMouse.y) * 0.035;
+    
+    const forward = v3normalize(v3sub(camera.target, camera.pos));
+    const right = v3normalize(v3cross(forward, {x:0,y:1,z:0}));
+    const up = {x:0, y:1, z:0};
+    
+    const throwDir = v3add(
+      v3scale(right, dx),
+      v3add(v3scale(up, -dy * 0.6), v3scale(forward, 2.5))
+    );
+    
+    const magnitude = Math.min(42, Math.sqrt(dx*dx + dy*dy) * 3.8 + 8);
+    
+    world.applyThrowImpulse(draggedBody, dragStartPoint, throwDir, magnitude);
+  }
+  
+  isDragging = false;
+  isInteracting = false;
+  draggedBody = null;
+  dragStartPoint = null;
+}
+
+function onMouseMove(e) {
+  if (!isDragging) return;
+  
+  const dx = e.clientX - lastMouseX;
+  const dy = e.clientY - lastMouseY;
+  
+  if (isInteracting && draggedBody) {
+    // Continuous force could be added here if desired
+  } else {
+    camera.yaw += dx * 0.0035;
+    camera.pitch = Math.max(-1.35, Math.min(-0.05, camera.pitch - dy * 0.0035));
+    updateCamera();
+  }
+  
+  lastMouseX = e.clientX;
+  lastMouseY = e.clientY;
+}
+
+function onWheel(e) {
+  e.preventDefault();
+  camera.distance = Math.max(4, Math.min(45, camera.distance + e.deltaY * 0.035));
+  updateCamera();
+}
+
+let touchStartX = 0, touchStartY = 0;
+let touchDragging = false;
+
+function handleTouchStart(e) {
+  if (e.touches.length === 1) {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchDragging = true;
+    
+    const ray = getMouseRay(touchStartX, touchStartY);
+    const hit = world.raycast(ray.origin, ray.direction);
+    if (hit && hit.body) {
+      isInteracting = true;
+      draggedBody = hit.body;
+      dragStartPoint = hit.point;
+    }
+  }
+}
+
+function handleTouchMove(e) {
+  if (!touchDragging || e.touches.length !== 1) return;
+  e.preventDefault();
+  
+  const dx = e.touches[0].clientX - touchStartX;
+  const dy = e.touches[0].clientY - touchStartY;
+  
+  if (!isInteracting) {
+    camera.yaw += dx * 0.004;
+    camera.pitch = Math.max(-1.35, Math.min(-0.05, camera.pitch - dy * 0.004));
+    updateCamera();
+  }
+  
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}
+
+function handleTouchEnd(e) {
+  if (isInteracting && draggedBody && dragStartPoint) {
+    const impulseDir = v3normalize(v3sub(camera.pos, dragStartPoint));
+    world.applyThrowImpulse(draggedBody, dragStartPoint, impulseDir, 22);
+  }
+  touchDragging = false;
+  isInteracting = false;
+  draggedBody = null;
+  dragStartPoint = null;
+}
+
+// ============================================================
+// INITIALIZATION
+// ============================================================
+
+function init() {
+  resizeCanvas();
+  window.addEventListener('resize', () => {
+    resizeCanvas();
+  });
+  
+  initShaders();
+  initShadowMap();
+  
+  updateCamera();
+  
+  setupUI();
+  
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE);
+  
+  console.log('%c[Physics Lab] Complex 3D rigid + soft body simulation initialized', 'color:#6366f1');
+  console.log('%cControls: Left-drag empty space = orbit | Left-drag object = throw on release | Scroll = zoom | Space = pause | R = reset | W = wireframe', 'color:#64748b');
+  
+  requestAnimationFrame(render);
+}
+
+init();
+
+</script>
+</body>
+</html>
+```

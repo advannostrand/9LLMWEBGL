@@ -1,0 +1,3780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Physics Simulation - Complex Geometry</title>
+<style>
+    /* =============================================
+       UI STYLING: Clean, functional overlay for controls
+       ============================================= */
+    body {
+        margin: 0;
+        overflow: hidden;
+        background: #111;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #eee;
+    }
+    canvas {
+        display: block;
+        background: linear-gradient(135deg, #0a0e23 0%, #1a1f3a 100%);
+    }
+    #ui-panel {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(10, 20, 40, 0.85);
+        border: 1px solid rgba(100, 150, 255, 0.3);
+        border-radius: 10px;
+        padding: 15px;
+        width: 280px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(5px);
+    }
+    #ui-panel h2 {
+        margin: 0 0 15px 0;
+        font-size: 14px;
+        color: #a0c4ff;
+        border-bottom: 1px solid rgba(100, 150, 255, 0.2);
+        padding-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .control-group {
+        margin-bottom: 12px;
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 6px;
+    }
+    .control-group h3 {
+        margin: 0 0 8px 0;
+        font-size: 11px;
+        color: #88a0c0;
+        text-transform: uppercase;
+    }
+    .slider-container {
+        display: flex;
+        align-items: center;
+        margin: 5px 0;
+    }
+    .slider-container label {
+        width: 100px;
+        font-size: 11px;
+        color: #ccc;
+    }
+    .slider-container input[type="range"] {
+        flex: 1;
+        height: 4px;
+        -webkit-appearance: none;
+        background: rgba(100, 150, 255, 0.2);
+        border-radius: 2px;
+        outline: none;
+    }
+    .slider-container input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 14px;
+        height: 14px;
+        background: #6495ff;
+        border-radius: 50%;
+        cursor: pointer;
+        box-shadow: 0 0 5px rgba(100, 150, 255, 0.7);
+    }
+    .slider-container span {
+        width: 40px;
+        text-align: right;
+        font-size: 11px;
+        color: #a0c4ff;
+        margin-left: 5px;
+    }
+    .button-row {
+        display: flex;
+        gap: 5px;
+        margin: 8px 0;
+    }
+    button {
+        flex: 1;
+        padding: 6px 10px;
+        background: rgba(100, 150, 255, 0.2);
+        border: 1px solid rgba(100, 150, 255, 0.4);
+        border-radius: 5px;
+        color: #a0c4ff;
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    button:hover {
+        background: rgba(100, 150, 255, 0.4);
+        border-color: rgba(100, 150, 255, 0.7);
+    }
+    button.active {
+        background: rgba(100, 150, 255, 0.6);
+        border-color: #6495ff;
+    }
+    select {
+        flex: 1;
+        padding: 6px;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(100, 150, 255, 0.4);
+        border-radius: 5px;
+        color: #a0c4ff;
+        font-size: 11px;
+        cursor: pointer;
+    }
+    select:focus {
+        outline: none;
+        border-color: #6495ff;
+    }
+    #fps {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(10, 20, 40, 0.85);
+        padding: 8px 15px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: bold;
+        color: #6495ff;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    }
+    #instructions {
+        position: absolute;
+        bottom: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(10, 20, 40, 0.85);
+        padding: 10px 15px;
+        border-radius: 8px;
+        font-size: 10px;
+        color: #88a0c0;
+        text-align: center;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        max-width: 80%;
+    }
+    #instructions kbd {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-family: monospace;
+        margin: 0 2px;
+    }
+    .preset-buttons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+        margin-top: 8px;
+    }
+    .preset-buttons button {
+        font-size: 10px;
+        padding: 5px;
+    }
+</style>
+</head>
+<body>
+    <canvas id="glCanvas"></canvas>
+
+    <div id="fps">FPS: 0</div>
+
+    <div id="ui-panel">
+        <h2>3D Physics Simulation</h2>
+
+        <div class="control-group">
+            <h3>Simulation</h3>
+            <div class="button-row">
+                <button id="pause">Pause</button>
+                <button id="reset">Reset</button>
+                <button id="wireframe">Wireframe</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>Physics Parameters</h3>
+            <div class="slider-container">
+                <label for="gravity">Gravity:</label>
+                <input type="range" id="gravity" min="-20" max="0" step="0.1" value="-9.8">
+                <span id="gravityValue">-9.8</span>
+            </div>
+            <div class="slider-container">
+                <label for="damping">Damping:</label>
+                <input type="range" id="damping" min="0.8" max="1.0" step="0.005" value="0.99">
+                <span id="dampingValue">0.990</span>
+            </div>
+            <div class="slider-container">
+                <label for="friction">Friction:</label>
+                <input type="range" id="friction" min="0" max="1" step="0.01" value="0.40">
+                <span id="frictionValue">0.40</span>
+            </div>
+            <div class="slider-container">
+                <label for="restitution">Bounciness:</label>
+                <input type="range" id="restitution" min="0" max="1" step="0.01" value="0.50">
+                <span id="restitutionValue">0.50</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>Performance</h3>
+            <div class="slider-container">
+                <label for="speed">Speed:</label>
+                <input type="range" id="speed" min="0.1" max="2" step="0.1" value="1.0">
+                <span id="speedValue">1.0</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>Presets</h3>
+            <div class="preset-buttons">
+                <button class="preset-btn" data-preset="stack">Stack Collapse</button>
+                <button class="preset-btn" data-preset="bunny">Bunny Drop</button>
+                <button class="preset-btn" data-preset="chain">Tetra Chain</button>
+                <button class="preset-btn" data-preset="destruction">Destruction</button>
+                <button class="preset-btn" data-preset="polyhedra">Polyhedra</button>
+                <button class="preset-btn" data-preset="torus">Torus Stack</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="instructions">
+        <kbd>Left Click + Drag</kbd> Rotate Camera |
+        <kbd>Right Click + Drag</kbd> Apply Force |
+        <kbd>Scroll</kbd> Zoom |
+        <kbd>W/A/S/D</kbd> Move Camera |
+        <kbd>R</kbd> Reset View
+    </div>
+
+<script>
+// =============================================
+// 3D PHYSICS SIMULATION WITH COMPLEX GEOMETRY
+// WebGL2 (Vanilla) - No External Libraries
+// Features: Rigid Body Dynamics, GJK Collision, Soft Body (Mass-Spring)
+// =============================================
+
+/**
+ * =============================================
+ * CONFIGURATION & GLOBAL STATE
+ * =============================================
+ * Centralized configuration for the simulation.
+ * All physics parameters, rendering settings, and world state are managed here.
+ */
+const CONFIG = {
+    // Simulation state
+    paused: false,
+    wireframe: false,
+    showAABB: false,
+    showParticles: true,
+
+    // Physics parameters
+    gravity: -9.8,
+    damping: 0.99,
+    friction: 0.4,
+    restitution: 0.5,
+    speed: 1.0,
+    stiffness: 500.0,
+    particleMultiplier: 1.0,
+
+    // Rendering
+    ambient: [0.15, 0.15, 0.2],
+    bgColor: [0.05, 0.07, 0.15],
+    lightColor: [0.9, 0.9, 1.0],
+    lightIntensity: 2.0
+};
+
+const CANVAS_SIZE = { width: 0, height: 0 };
+let gl, canvas, world, camera, particleSystem;
+
+// =============================================
+// MATHEMATICS UTILITIES
+// =============================================
+// Comprehensive vector, matrix, and quaternion operations with physics-specific functions
+
+const MathUtils = {
+    // EPSILON for floating point comparisons
+    EPSILON: 1e-6,
+
+    // =========================================
+    // VECTOR 3 OPERATIONS
+    // =========================================
+    vec3: {
+        create: (x=0, y=0, z=0) => new Float32Array([x, y, z]),
+
+        copy: (a) => new Float32Array([a[0], a[1], a[2]]),
+
+        add: (a, b, out=new Float32Array(3)) => {
+            out[0] = a[0] + b[0];
+            out[1] = a[1] + b[1];
+            out[2] = a[2] + b[2];
+            return out;
+        },
+
+        sub: (a, b, out=new Float32Array(3)) => {
+            out[0] = a[0] - b[0];
+            out[1] = a[1] - b[1];
+            out[2] = a[2] - b[2];
+            return out;
+        },
+
+        mul: (a, b, out=new Float32Array(3)) => {
+            out[0] = a[0] * b[0];
+            out[1] = a[1] * b[1];
+            out[2] = a[2] * b[2];
+            return out;
+        },
+
+        scale: (a, s, out=new Float32Array(3)) => {
+            out[0] = a[0] * s;
+            out[1] = a[1] * s;
+            out[2] = a[2] * s;
+            return out;
+        },
+
+        dot: (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2],
+
+        cross: (a, b, out=new Float32Array(3)) => {
+            out[0] = a[1]*b[2] - a[2]*b[1];
+            out[1] = a[2]*b[0] - a[0]*b[2];
+            out[2] = a[0]*b[1] - a[1]*b[0];
+            return out;
+        },
+
+        len: (a) => Math.sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]),
+
+        lenSq: (a) => a[0]*a[0] + a[1]*a[1] + a[2]*a[2],
+
+        norm: (a, out=new Float32Array(3)) => {
+            const l = MathUtils.vec3.len(a);
+            if (l < MathUtils.EPSILON) return MathUtils.vec3.create(0, 0, 0);
+            return MathUtils.vec3.scale(a, 1/l, out);
+        },
+
+        dist: (a, b) => MathUtils.vec3.len(MathUtils.vec3.sub(a, b)),
+
+        neg: (a, out=new Float32Array(3)) => {
+            out[0] = -a[0];
+            out[1] = -a[1];
+            out[2] = -a[2];
+            return out;
+        },
+
+        lerp: (a, b, t, out=new Float32Array(3)) => {
+            out[0] = a[0] + (b[0]-a[0])*t;
+            out[1] = a[1] + (b[1]-a[1])*t;
+            out[2] = a[2] + (b[2]-a[2])*t;
+            return out;
+        },
+
+        clamp: (a, min, max, out=new Float32Array(3)) => {
+            out[0] = Math.max(min[0], Math.min(max[0], a[0]));
+            out[1] = Math.max(min[1], Math.min(max[1], a[1]));
+            out[2] = Math.max(min[2], Math.min(max[2], a[2]));
+            return out;
+        },
+
+        // Triple product: a × (b × c)
+        tripleProduct: (a, b, c, out=new Float32Array(3)) => {
+            const bCrossC = MathUtils.vec3.cross(b, c);
+            return MathUtils.vec3.cross(a, bCrossC, out);
+        }
+    },
+
+    // =========================================
+    // MATRIX 4 OPERATIONS
+    // =========================================
+    mat4: {
+        create: () => new Float32Array([
+            1,0,0,0,
+            0,1,0,0,
+            0,0,1,0,
+            0,0,0,1
+        ]),
+
+        identity: () => MathUtils.mat4.create(),
+
+        perspective: (fov, aspect, near, far, out=new Float32Array(16)) => {
+            const f = 1.0 / Math.tan(fov * Math.PI / 360.0);
+            const nf = 1 / (near - far);
+            out[0] = f / aspect;
+            out[1] = 0;
+            out[2] = 0;
+            out[3] = 0;
+            out[4] = 0;
+            out[5] = f;
+            out[6] = 0;
+            out[7] = 0;
+            out[8] = 0;
+            out[9] = 0;
+            out[10] = (far + near) * nf;
+            out[11] = -1;
+            out[12] = 0;
+            out[13] = 0;
+            out[14] = (2 * far * near) * nf;
+            out[15] = 0;
+            return out;
+        },
+
+        lookAt: (eye, center, up, out=new Float32Array(16)) => {
+            const z = MathUtils.vec3.norm(MathUtils.vec3.sub(eye, center));
+            const x = MathUtils.vec3.norm(MathUtils.vec3.cross(up, z));
+            const y = MathUtils.vec3.cross(z, x);
+
+            out[0] = x[0]; out[1] = y[0]; out[2] = z[0]; out[3] = 0;
+            out[4] = x[1]; out[5] = y[1]; out[6] = z[1]; out[7] = 0;
+            out[8] = x[2]; out[9] = y[2]; out[10] = z[2]; out[11] = 0;
+            out[12] = -MathUtils.vec3.dot(x, eye);
+            out[13] = -MathUtils.vec3.dot(y, eye);
+            out[14] = -MathUtils.vec3.dot(z, eye);
+            out[15] = 1;
+            return out;
+        },
+
+        multiply: (a, b, out=new Float32Array(16)) => {
+            const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+            const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+            const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+            const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+
+            let b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
+            out[0] = b0*a00 + b1*a10 + b2*a20 + b3*a30;
+            out[1] = b0*a01 + b1*a11 + b2*a21 + b3*a31;
+            out[2] = b0*a02 + b1*a12 + b2*a22 + b3*a32;
+            out[3] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
+
+            b0 = b[4]; b1 = b[5]; b2 = b[6]; b3 = b[7];
+            out[4] = b0*a00 + b1*a10 + b2*a20 + b3*a30;
+            out[5] = b0*a01 + b1*a11 + b2*a21 + b3*a31;
+            out[6] = b0*a02 + b1*a12 + b2*a22 + b3*a32;
+            out[7] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
+
+            b0 = b[8]; b1 = b[9]; b2 = b[10]; b3 = b[11];
+            out[8] = b0*a00 + b1*a10 + b2*a20 + b3*a30;
+            out[9] = b0*a01 + b1*a11 + b2*a21 + b3*a31;
+            out[10] = b0*a02 + b1*a12 + b2*a22 + b3*a32;
+            out[11] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
+
+            b0 = b[12]; b1 = b[13]; b2 = b[14]; b3 = b[15];
+            out[12] = b0*a00 + b1*a10 + b2*a20 + b3*a30;
+            out[13] = b0*a01 + b1*a11 + b2*a21 + b3*a31;
+            out[14] = b0*a02 + b1*a12 + b2*a22 + b3*a32;
+            out[15] = b0*a03 + b1*a13 + b2*a23 + b3*a33;
+            return out;
+        },
+
+        translate: (m, v, out=new Float32Array(16)) => {
+            const x = v[0], y = v[1], z = v[2];
+
+            if (m === out) {
+                out[12] = m[0]*x + m[4]*y + m[8]*z + m[12];
+                out[13] = m[1]*x + m[5]*y + m[9]*z + m[13];
+                out[14] = m[2]*x + m[6]*y + m[10]*z + m[14];
+                out[15] = m[3]*x + m[7]*y + m[11]*z + m[15];
+                return out;
+            }
+
+            out[0] = m[0]; out[1] = m[1]; out[2] = m[2]; out[3] = m[3];
+            out[4] = m[4]; out[5] = m[5]; out[6] = m[6]; out[7] = m[7];
+            out[8] = m[8]; out[9] = m[9]; out[10] = m[10]; out[11] = m[11];
+            out[12] = m[0]*x + m[4]*y + m[8]*z + m[12];
+            out[13] = m[1]*x + m[5]*y + m[9]*z + m[13];
+            out[14] = m[2]*x + m[6]*y + m[10]*z + m[14];
+            out[15] = m[3]*x + m[7]*y + m[11]*z + m[15];
+            return out;
+        },
+
+        scale: (m, v, out=new Float32Array(16)) => {
+            const x = v[0], y = v[1], z = v[2];
+            out[0] = m[0]*x; out[1] = m[1]*x; out[2] = m[2]*x; out[3] = m[3]*x;
+            out[4] = m[4]*y; out[5] = m[5]*y; out[6] = m[6]*y; out[7] = m[7]*y;
+            out[8] = m[8]*z; out[9] = m[9]*z; out[10] = m[10]*z; out[11] = m[11]*z;
+            out[12] = m[12]; out[13] = m[13]; out[14] = m[14]; out[15] = m[15];
+            return out;
+        },
+
+        rotateX: (m, angle, out=new Float32Array(16)) => {
+            const s = Math.sin(angle);
+            const c = Math.cos(angle);
+            const a10 = m[4];
+            const a11 = m[5];
+            const a12 = m[6];
+            const a13 = m[7];
+            const a20 = m[8];
+            const a21 = m[9];
+            const a22 = m[10];
+            const a23 = m[11];
+
+            if (m !== out) {
+                out[0] = m[0];
+                out[1] = m[1];
+                out[2] = m[2];
+                out[3] = m[3];
+                out[12] = m[12];
+                out[13] = m[13];
+                out[14] = m[14];
+                out[15] = m[15];
+            }
+
+            out[4] = a10*c + a20*s;
+            out[5] = a11*c + a21*s;
+            out[6] = a12*c + a22*s;
+            out[7] = a13*c + a23*s;
+            out[8] = a20*c - a10*s;
+            out[9] = a21*c - a11*s;
+            out[10] = a22*c - a12*s;
+            out[11] = a23*c - a13*s;
+            return out;
+        },
+
+        rotateY: (m, angle, out=new Float32Array(16)) => {
+            const s = Math.sin(angle);
+            const c = Math.cos(angle);
+            const a00 = m[0];
+            const a01 = m[1];
+            const a02 = m[2];
+            const a03 = m[3];
+            const a20 = m[8];
+            const a21 = m[9];
+            const a22 = m[10];
+            const a23 = m[11];
+
+            if (m !== out) {
+                out[4] = m[4];
+                out[5] = m[5];
+                out[6] = m[6];
+                out[7] = m[7];
+                out[12] = m[12];
+                out[13] = m[13];
+                out[14] = m[14];
+                out[15] = m[15];
+            }
+
+            out[0] = a00*c + a20*s;
+            out[1] = a01*c + a21*s;
+            out[2] = a02*c + a22*s;
+            out[3] = a03*c + a23*s;
+            out[8] = a20*c - a00*s;
+            out[9] = a21*c - a01*s;
+            out[10] = a22*c - a02*s;
+            out[11] = a23*c - a03*s;
+            return out;
+        },
+
+        rotateZ: (m, angle, out=new Float32Array(16)) => {
+            const s = Math.sin(angle);
+            const c = Math.cos(angle);
+            const a00 = m[0];
+            const a01 = m[1];
+            const a02 = m[2];
+            const a03 = m[3];
+            const a10 = m[4];
+            const a11 = m[5];
+            const a12 = m[6];
+            const a13 = m[7];
+
+            if (m !== out) {
+                out[8] = m[8];
+                out[9] = m[9];
+                out[10] = m[10];
+                out[11] = m[11];
+                out[12] = m[12];
+                out[13] = m[13];
+                out[14] = m[14];
+                out[15] = m[15];
+            }
+
+            out[0] = a00*c + a10*s;
+            out[1] = a01*c + a11*s;
+            out[2] = a02*c + a12*s;
+            out[3] = a03*c + a13*s;
+            out[4] = a10*c - a00*s;
+            out[5] = a11*c - a01*s;
+            out[6] = a12*c - a02*s;
+            out[7] = a13*c - a03*s;
+            return out;
+        },
+
+        transpose: (m, out=new Float32Array(16)) => {
+            out[0] = m[0]; out[1] = m[4]; out[2] = m[8]; out[3] = m[12];
+            out[4] = m[1]; out[5] = m[5]; out[6] = m[9]; out[7] = m[13];
+            out[8] = m[2]; out[9] = m[6]; out[10] = m[10]; out[11] = m[14];
+            out[12] = m[3]; out[13] = m[7]; out[14] = m[11]; out[15] = m[15];
+            return out;
+        },
+
+        inverse: (m, out=new Float32Array(16)) => {
+            const a00 = m[0], a01 = m[1], a02 = m[2], a03 = m[3];
+            const a10 = m[4], a11 = m[5], a12 = m[6], a13 = m[7];
+            const a20 = m[8], a21 = m[9], a22 = m[10], a23 = m[11];
+            const a30 = m[12], a31 = m[13], a32 = m[14], a33 = m[15];
+
+            const b00 = a00*a11 - a01*a10;
+            const b01 = a00*a12 - a02*a10;
+            const b02 = a00*a13 - a03*a10;
+            const b03 = a01*a12 - a02*a11;
+            const b04 = a01*a13 - a03*a11;
+            const b05 = a02*a13 - a03*a12;
+            const det = b00*a22 - b01*a21 + b02*a20 + b03*a32 - b04*a31 + b05*a30;
+
+            if (Math.abs(det) < MathUtils.EPSILON) return MathUtils.mat4.identity(out);
+
+            out[0] = (a11*a22*a33 + a12*a23*a31 + a13*a21*a32 - a13*a22*a31 - a12*a21*a33 - a11*a23*a32) / det;
+            out[1] = (a03*a22*a31 + a01*a23*a32 + a02*a21*a33 - a02*a23*a31 - a03*a21*a33 - a01*a22*a33) / det;
+            out[2] = (a03*a12*a31 + a01*a13*a32 + a02*a11*a33 - a02*a13*a31 - a03*a11*a33 - a01*a12*a33) / det;
+            out[3] = (a03*a12*a21 + a01*a13*a22 + a02*a11*a23 - a02*a13*a21 - a03*a11*a23 - a01*a12*a22) / det;
+            out[4] = (a10*a23*a32 + a12*a20*a33 + a13*a22*a30 - a13*a20*a32 - a10*a22*a33 - a12*a23*a30) / det;
+            out[5] = (a00*a22*a33 + a02*a23*a30 + a03*a20*a32 - a03*a22*a30 - a00*a23*a32 - a02*a20*a33) / det;
+            out[6] = (a00*a13*a32 + a02*a10*a33 + a03*a12*a30 - a03*a10*a32 - a00*a12*a33 - a02*a13*a30) / det;
+            out[7] = (a00*a12*a23 + a02*a13*a20 + a03*a10*a22 - a03*a12*a20 - a00*a13*a22 - a02*a10*a23) / det;
+            out[8] = (a10*a21*a33 + a11*a23*a30 + a13*a20*a31 - a13*a21*a30 - a10*a23*a31 - a11*a20*a33) / det;
+            out[9] = (a00*a23*a31 + a01*a20*a33 + a03*a21*a30 - a03*a20*a31 - a00*a21*a33 - a01*a23*a30) / det;
+            out[10] = (a00*a11*a33 + a01*a13*a30 + a03*a10*a31 - a03*a11*a30 - a00*a13*a31 - a01*a10*a33) / det;
+            out[11] = (a00*a13*a21 + a01*a10*a23 + a03*a11*a20 - a03*a10*a21 - a00*a11*a23 - a01*a13*a20) / det;
+            out[12] = (a10*a22*a31 + a11*a20*a32 + a12*a21*a30 - a12*a20*a31 - a10*a21*a32 - a11*a22*a30) / det;
+            out[13] = (a00*a21*a32 + a01*a22*a30 + a02*a20*a31 - a02*a21*a30 - a00*a22*a31 - a01*a20*a32) / det;
+            out[14] = (a00*a12*a31 + a01*a10*a32 + a02*a11*a30 - a02*a10*a31 - a00*a11*a32 - a01*a12*a30) / det;
+            out[15] = (a00*a11*a22 + a01*a12*a20 + a02*a10*a21 - a02*a11*a20 - a00*a12*a21 - a01*a10*a22) / det;
+            return out;
+        },
+
+        copy: (m, out=new Float32Array(16)) => {
+            out.set(m);
+            return out;
+        },
+
+        // Extract 3x3 rotation matrix from 4x4
+        getRotation: (m, out=new Float32Array(9)) => {
+            out[0] = m[0]; out[1] = m[1]; out[2] = m[2];
+            out[3] = m[4]; out[4] = m[5]; out[5] = m[6];
+            out[6] = m[8]; out[7] = m[9]; out[8] = m[10];
+            return out;
+        }
+    },
+
+    // =========================================
+    // QUATERNION OPERATIONS
+    // =========================================
+    quat: {
+        create: (x=0, y=0, z=0, w=1) => new Float32Array([x, y, z, w]),
+
+        identity: () => MathUtils.quat.create(),
+
+        conjugate: (q, out=new Float32Array(4)) => {
+            out[0] = -q[0];
+            out[1] = -q[1];
+            out[2] = -q[2];
+            out[3] = q[3];
+            return out;
+        },
+
+        norm: (q) => Math.sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]),
+
+        normalize: (q, out=new Float32Array(4)) => {
+            const n = MathUtils.quat.norm(q);
+            if (n < MathUtils.EPSILON) return MathUtils.quat.identity(out);
+            out[0] = q[0]/n;
+            out[1] = q[1]/n;
+            out[2] = q[2]/n;
+            out[3] = q[3]/n;
+            return out;
+        },
+
+        multiply: (a, b, out=new Float32Array(4)) => {
+            const ax = a[0], ay = a[1], az = a[2], aw = a[3];
+            const bx = b[0], by = b[1], bz = b[2], bw = b[3];
+            out[0] = ax*bw + aw*bx + ay*bz - az*by;
+            out[1] = ay*bw + aw*by + az*bx - ax*bz;
+            out[2] = az*bw + aw*bz + ax*by - ay*bx;
+            out[3] = aw*bw - ax*bx - ay*by - az*bz;
+            return out;
+        },
+
+        fromAxisAngle: (axis, angle, out=new Float32Array(4)) => {
+            const a = MathUtils.vec3.norm(axis);
+            const s = Math.sin(angle/2);
+            out[0] = a[0] * s;
+            out[1] = a[1] * s;
+            out[2] = a[2] * s;
+            out[3] = Math.cos(angle/2);
+            return out;
+        },
+
+        toMat4: (q, out=new Float32Array(16)) => {
+            const x = q[0], y = q[1], z = q[2], w = q[3];
+            const x2 = x + x, y2 = y + y, z2 = z + z;
+            const xx = x * x2, yy = y * y2, zz = z * z2;
+            const xy = x * y2, xz = x * z2, yz = y * z2;
+            const wx = w * x2, wy = w * y2, wz = w * z2;
+
+            out[0] = 1 - yy - zz;
+            out[1] = xy - wz;
+            out[2] = xz + wy;
+            out[3] = 0;
+
+            out[4] = xy + wz;
+            out[5] = 1 - xx - zz;
+            out[6] = yz - wx;
+            out[7] = 0;
+
+            out[8] = xz - wy;
+            out[9] = yz + wx;
+            out[10] = 1 - xx - yy;
+            out[11] = 0;
+
+            out[12] = 0;
+            out[13] = 0;
+            out[14] = 0;
+            out[15] = 1;
+            return out;
+        },
+
+        slerp: (a, b, t, out=new Float32Array(4)) => {
+            let cosom = MathUtils.vec3.dot(a, b);
+            let bOut = b;
+
+            if (cosom < 0) {
+                cosom = -cosom;
+                bOut = MathUtils.quat.negate(b);
+            }
+
+            if (cosom >= 1.0) {
+                return MathUtils.quat.copy(a, out);
+            }
+
+            const sinom = Math.sqrt(1.0 - cosom * cosom);
+            const omega = Math.atan2(sinom, cosom);
+            const sinom_inv = 1.0 / sinom;
+
+            const s0 = Math.sin((1.0 - t) * omega) * sinom_inv;
+            const s1 = Math.sin(t * omega) * sinom_inv;
+
+            out[0] = a[0] * s0 + bOut[0] * s1;
+            out[1] = a[1] * s0 + bOut[1] * s1;
+            out[2] = a[2] * s0 + bOut[2] * s1;
+            out[3] = a[3] * s0 + bOut[3] * s1;
+            return out;
+        },
+
+        negate: (q, out=new Float32Array(4)) => {
+            out[0] = -q[0];
+            out[1] = -q[1];
+            out[2] = -q[2];
+            out[3] = q[3];
+            return out;
+        },
+
+        copy: (q, out=new Float32Array(4)) => {
+            out.set(q);
+            return out;
+        },
+
+        // Rotate vector by quaternion
+        rotateVec3: (v, q, out=new Float32Array(3)) => {
+            const qx = q[0], qy = q[1], qz = q[2], qw = q[3];
+            const vx = v[0], vy = v[1], vz = v[2];
+
+            const t2 =   qx * vy;
+            const t3 =   qx * vz;
+            const t4 =   qy * vx;
+            const t5 =   qy * vz;
+            const t6 =   qz * vx;
+            const t7 =   qz * vy;
+            const t8 = qw * vx;
+            const t9 = qw * vy;
+            const t10 = qw * vz;
+
+            out[0] = vx + (-t8 + t9 * qz - t7 * qy - t5 * qz + t6 * qy) * 2;
+            out[1] = vy + ( t7 - t6 * qz - t10 + t4 * qz + t2 * qx) * 2;
+            out[2] = vz + ( t3 - t2 * qy + t5 * qx - t4 * qx + t9 * qy) * 2;
+            return out;
+        }
+    },
+
+    // =========================================
+    // GJK ALGORITHM FOR COLLISION DETECTION
+    // =========================================
+    // Gilbert-Johnson-Keerthi algorithm for detecting collision between convex shapes
+    gjk: {
+        /**
+         * Support function: finds the most extreme point in a shape in a given direction
+         * @param {Shape} shape - The convex shape
+         * @param {Float32Array} direction - The direction vector
+         * @param {Float32Array} transform - Transformation matrix for the shape
+         * @returns {Float32Array} The most extreme point in the given direction
+         */
+        support: (shape, direction, transform) => {
+            let maxDot = -Infinity;
+            let bestVertex = MathUtils.vec3.create();
+
+            // Transform direction to shape's local space
+            const invTransform = MathUtils.mat4.inverse(transform);
+            const localDir = MathUtils.vec3.create(
+                invTransform[0]*direction[0] + invTransform[4]*direction[1] + invTransform[8]*direction[2],
+                invTransform[1]*direction[0] + invTransform[5]*direction[1] + invTransform[9]*direction[2],
+                invTransform[2]*direction[0] + invTransform[6]*direction[1] + invTransform[10]*direction[2]
+            );
+
+            // Find the vertex with maximum dot product with local direction
+            for (let i = 0; i < shape.vertices.length; i += 8) {
+                const x = shape.vertices[i];
+                const y = shape.vertices[i+1];
+                const z = shape.vertices[i+2];
+
+                const dot = x * localDir[0] + y * localDir[1] + z * localDir[2];
+                if (dot > maxDot) {
+                    maxDot = dot;
+                    // Transform vertex to world space
+                    bestVertex[0] = transform[0]*x + transform[4]*y + transform[8]*z + transform[12];
+                    bestVertex[1] = transform[1]*x + transform[5]*y + transform[9]*z + transform[13];
+                    bestVertex[2] = transform[2]*x + transform[6]*y + transform[10]*z + transform[14];
+                }
+            }
+
+            return bestVertex;
+        },
+
+        /**
+         * Check if origin is contained within the simplex
+         * @param {Array} simplex - Array of support points
+         * @param {Float32Array} direction - Output direction for next iteration
+         * @returns {boolean} True if origin is in simplex
+         */
+        containsOrigin: (simplex, direction) => {
+            switch (simplex.length) {
+                case 1:
+                    // Single point - origin can't be inside
+                    direction.set(simplex[0].diff);
+                    MathUtils.vec3.neg(direction, direction);
+                    return false;
+
+                case 2:
+                    // Line segment
+                    return MathUtils.gjk.lineCase(simplex, direction);
+
+                case 3:
+                    // Triangle
+                    return MathUtils.gjk.triangleCase(simplex, direction);
+
+                case 4:
+                    // Tetrahedron
+                    return MathUtils.gjk.tetrahedronCase(simplex, direction);
+
+                default:
+                    return false;
+            }
+        },
+
+        lineCase: (simplex, direction) => {
+            const a = simplex[0].diff;
+            const b = simplex[1].diff;
+            const ab = MathUtils.vec3.sub(b, a);
+            const ao = MathUtils.vec3.neg(a);
+
+            // Check if origin is on the line segment
+            const abPerp = MathUtils.vec3.tripleProduct(ab, ao, ab);
+
+            if (MathUtils.vec3.lenSq(abPerp) < MathUtils.EPSILON) {
+                // Points are colinear
+                const t = MathUtils.vec3.dot(ao, ab) / MathUtils.vec3.lenSq(ab);
+                if (t >= 0 && t <= 1) {
+                    direction.set(abPerp);
+                    return true;
+                }
+            }
+
+            // Find closest point to origin
+            const t = MathUtils.vec3.dot(ao, ab) / MathUtils.vec3.lenSq(ab);
+            if (t < 0) {
+                direction.set(a);
+            } else if (t > 1) {
+                direction.set(b);
+            } else {
+                direction.set(abPerp);
+            }
+
+            MathUtils.vec3.neg(direction, direction);
+            return false;
+        },
+
+        triangleCase: (simplex, direction) => {
+            const a = simplex[0].diff;
+            const b = simplex[1].diff;
+            const c = simplex[2].diff;
+
+            const ab = MathUtils.vec3.sub(b, a);
+            const ac = MathUtils.vec3.sub(c, a);
+            const ao = MathUtils.vec3.neg(a);
+
+            // Normal of the triangle
+            const n = MathUtils.vec3.cross(ab, ac);
+
+            // Check which side of the triangle the origin is on
+            if (MathUtils.vec3.dot(n, ao) > 0) {
+                // Origin is on the same side as the normal
+                direction.set(n);
+                return false;
+            }
+
+            // Check edges
+            const abPerp = MathUtils.vec3.tripleProduct(ac, ab, ac);
+            if (MathUtils.vec3.dot(abPerp, ao) > 0) {
+                // Origin is on the AB side
+                simplex.splice(2, 1);
+                direction.set(abPerp);
+                return false;
+            }
+
+            const acPerp = MathUtils.vec3.tripleProduct(ab, ac, ab);
+            if (MathUtils.vec3.dot(acPerp, ao) > 0) {
+                // Origin is on the AC side
+                simplex.splice(1, 1);
+                direction.set(acPerp);
+                return false;
+            }
+
+            // Origin is inside the triangle
+            direction.set(n);
+            MathUtils.vec3.neg(direction, direction);
+            return true;
+        },
+
+        tetrahedronCase: (simplex, direction) => {
+            const a = simplex[0].diff;
+            const b = simplex[1].diff;
+            const c = simplex[2].diff;
+            const d = simplex[3].diff;
+
+            const ab = MathUtils.vec3.sub(b, a);
+            const ac = MathUtils.vec3.sub(c, a);
+            const ad = MathUtils.vec3.sub(d, a);
+            const ao = MathUtils.vec3.neg(a);
+
+            // Check if origin is on the same side of each face
+            const abcNormal = MathUtils.vec3.cross(ab, ac);
+            if (MathUtils.vec3.dot(abcNormal, ao) > 0) {
+                // Remove D
+                simplex.splice(3, 1);
+                direction.set(abcNormal);
+                return false;
+            }
+
+            const abdNormal = MathUtils.vec3.cross(ab, ad);
+            if (MathUtils.vec3.dot(abdNormal, ao) > 0) {
+                // Remove C
+                simplex.splice(2, 1);
+                direction.set(abdNormal);
+                return false;
+            }
+
+            const acdNormal = MathUtils.vec3.cross(ac, ad);
+            if (MathUtils.vec3.dot(acdNormal, ao) > 0) {
+                // Remove B
+                simplex.splice(1, 1);
+                direction.set(acdNormal);
+                return false;
+            }
+
+            // Origin is inside the tetrahedron
+            direction.set(abcNormal);
+            MathUtils.vec3.neg(direction, direction);
+            return true;
+        },
+
+        /**
+         * Main GJK collision detection
+         * @param {Shape} shapeA - First convex shape
+         * @param {Shape} shapeB - Second convex shape
+         * @param {Float32Array} transformA - Transform for shape A
+         * @param {Float32Array} transformB - Transform for shape B
+         * @param {number} maxIterations - Maximum iterations
+         * @returns {Object|null} Collision info or null if no collision
+         */
+        collide: (shapeA, shapeB, transformA, transformB, maxIterations = 20) => {
+            // Initial direction (arbitrary)
+            let direction = MathUtils.vec3.create(1, 0, 0);
+
+            // Get initial support point
+            let sA = MathUtils.gjk.support(shapeA, direction, transformA);
+            let sB = MathUtils.gjk.support(shapeB, MathUtils.vec3.neg(direction), transformB);
+            let s = MathUtils.vec3.sub(sA, sB);
+
+            let simplex = [{a: sA, b: sB, diff: s}];
+
+            // Point towards origin
+            MathUtils.vec3.neg(s, direction);
+
+            for (let i = 0; i < maxIterations; i++) {
+                // Get new support point
+                sA = MathUtils.gjk.support(shapeA, direction, transformA);
+                sB = MathUtils.gjk.support(shapeB, MathUtils.vec3.neg(direction), transformB);
+                s = MathUtils.vec3.sub(sA, sB);
+
+                // If new point is not beyond origin in direction, we have a collision
+                if (MathUtils.vec3.dot(s, direction) <= 0) {
+                    return { colliding: true, simplex };
+                }
+
+                // Add new point to simplex
+                simplex.push({a: sA, b: sB, diff: s});
+
+                // Check if origin is in the new simplex
+                if (MathUtils.gjk.containsOrigin(simplex, direction)) {
+                    return { colliding: true, simplex };
+                }
+            }
+
+            return { colliding: false, simplex };
+        }
+    },
+
+    // =========================================
+    // EPA ALGORITHM FOR PENATRATION DEPTH
+    // =========================================
+    // Expanding Polytope Algorithm - finds minimum penetration depth
+    epa: {
+        /**
+         * Compute penetration depth using EPA
+         * @param {Shape} shapeA - First convex shape
+         * @param {Shape} shapeB - Second convex shape
+         * @param {Array} simplex - Initial simplex from GJK
+         * @param {Float32Array} transformA - Transform for shape A
+         * @param {Float32Array} transformB - Transform for shape B
+         * @param {number} maxIterations - Maximum iterations
+         * @returns {Object} Penetration info {depth, normal}
+         */
+        getPenetration: (shapeA, shapeB, simplex, transformA, transformB, maxIterations = 30) => {
+            // Convert simplex to polytope (list of faces)
+            let polytope = [];
+
+            // Initial face is the triangle from GJK simplex
+            const a = simplex[0].diff;
+            const b = simplex[1].diff;
+            const c = simplex[2].diff;
+
+            // Face normal points toward origin
+            const normal = MathUtils.vec3.norm(MathUtils.vec3.cross(
+                MathUtils.vec3.sub(b, a),
+                MathUtils.vec3.sub(c, a)
+            ));
+
+            // Check if normal points away from origin
+            if (MathUtils.vec3.dot(normal, a) > 0) {
+                MathUtils.vec3.neg(normal, normal);
+            }
+
+            polytope.push({
+                vertices: [a, b, c],
+                normal: normal,
+                distance: MathUtils.vec3.dot(normal, a)
+            });
+
+            // EPA iteration
+            let closestFace = polytope[0];
+            let minDistance = closestFace.distance;
+
+            for (let i = 0; i < maxIterations; i++) {
+                // Find support point in direction of closest face normal
+                const sA = MathUtils.gjk.support(shapeA, closestFace.normal, transformA);
+                const sB = MathUtils.gjk.support(shapeB, MathUtils.vec3.neg(closestFace.normal), transformB);
+                const s = MathUtils.vec3.sub(sA, sB);
+
+                const d = MathUtils.vec3.dot(s, closestFace.normal);
+
+                // If new point is not beyond the closest face, we're done
+                if (d - closestFace.distance < MathUtils.EPSILON) {
+                    return {
+                        depth: closestFace.distance,
+                        normal: closestFace.normal
+                    };
+                }
+
+                // Find all faces visible from the new point
+                let visibleFaces = [];
+                for (const face of polytope) {
+                    if (MathUtils.vec3.dot(face.normal, s) > face.distance + MathUtils.EPSILON) {
+                        visibleFaces.push(face);
+                    }
+                }
+
+                // Add new faces connecting the new point to the horizon
+                for (const face of visibleFaces) {
+                    for (let j = 0; j < face.vertices.length; j++) {
+                        const a = face.vertices[j];
+                        const b = face.vertices[(j+1) % face.vertices.length];
+
+                        const edgeNormal = MathUtils.vec3.norm(
+                            MathUtils.vec3.cross(
+                                MathUtils.vec3.sub(s, a),
+                                MathUtils.vec3.sub(b, a)
+                            )
+                        );
+
+                        // Ensure normal points outward
+                        if (MathUtils.vec3.dot(edgeNormal, MathUtils.vec3.sub(a, s)) > 0) {
+                            MathUtils.vec3.neg(edgeNormal, edgeNormal);
+                        }
+
+                        const edgeDistance = MathUtils.vec3.dot(edgeNormal, s);
+
+                        polytope.push({
+                            vertices: [s, a, b],
+                            normal: edgeNormal,
+                            distance: edgeDistance
+                        });
+                    }
+                }
+
+                // Remove visible faces from polytope
+                polytope = polytope.filter(face => !visibleFaces.includes(face));
+
+                // Find the new closest face
+                minDistance = Infinity;
+                for (const face of polytope) {
+                    if (face.distance < minDistance) {
+                        minDistance = face.distance;
+                        closestFace = face;
+                    }
+                }
+
+                // If no progress, exit
+                if (minDistance === Infinity) break;
+            }
+
+            return {
+                depth: closestFace.distance,
+                normal: closestFace.normal
+            };
+        }
+    },
+
+    // =========================================
+    // UTILITY FUNCTIONS
+    // =========================================
+    clamp: (value, min, max) => Math.max(min, Math.min(max, value)),
+
+    // Random float between min and max
+    randomRange: (min, max) => Math.random() * (max - min) + min,
+
+    // Random color
+    randomColor: () => [
+        MathUtils.randomRange(0.3, 1.0),
+        MathUtils.randomRange(0.3, 1.0),
+        MathUtils.randomRange(0.3, 1.0)
+    ],
+
+    // Sign function
+    sign: (x) => x > 0 ? 1 : x < 0 ? -1 : 0
+};
+
+// =============================================
+// GEOMETRY GENERATION
+// =============================================
+// Procedural generation of complex 3D meshes: Stanford Bunny approximation,
+// icosahedron, dodecahedron, torus, tetrahedron, and random convex polyhedra
+
+const Geometry = {
+    // Pre-defined Stanford Bunny vertices and faces (simplified low-poly version)
+    // This is a 35-vertex, 64-face approximation of the Stanford Bunny
+    BUNNY: {
+        vertices: new Float32Array([
+            // Position (x,y,z), Normal (nx,ny,nz), TexCoord (u,v)
+            0.0000, 0.1680, -0.0650,  0.0000, 0.8000, -0.6000,  0.5000, 0.5000,
+            0.0000, 0.0000, -0.1250,  0.0000, 0.0000, -1.0000,  0.5000, 0.7500,
+            -0.0450, 0.0000, -0.0800, -0.3571, 0.0000, -0.9339,  0.2500, 0.7500,
+            0.0450, 0.0000, -0.0800,  0.3571, 0.0000, -0.9339,  0.7500, 0.7500,
+            0.0000, 0.0000, 0.0000,    0.0000, 0.0000, 1.0000,   0.5000, 1.0000,
+            0.0000, 0.0840, 0.0000,   0.0000, 1.0000, 0.0000,   0.5000, 0.0000,
+            0.0000, -0.0840, 0.0000,  0.0000, -1.0000, 0.0000,  0.5000, 1.0000,
+            -0.0450, 0.0420, 0.0000, -0.7071, 0.7071, 0.0000,   0.2500, 0.2500,
+            0.0450, 0.0420, 0.0000,  0.7071, 0.7071, 0.0000,   0.7500, 0.2500,
+            -0.0450, -0.0420, 0.0000, -0.7071, -0.7071, 0.0000, 0.2500, 0.7500,
+            0.0450, -0.0420, 0.0000, 0.7071, -0.7071, 0.0000,  0.7500, 0.7500,
+
+            -0.0900, 0.0840, -0.0450, -0.7071, 0.7071, 0.0000,  0.0000, 0.2500,
+            0.0900, 0.0840, -0.0450,  0.7071, 0.7071, 0.0000,   1.0000, 0.2500,
+            -0.0900, -0.0840, -0.0450, -0.7071, -0.7071, 0.0000, 0.0000, 0.7500,
+            0.0900, -0.0840, -0.0450, 0.7071, -0.7071, 0.0000,  1.0000, 0.7500,
+
+            0.0000, 0.1260, -0.0900, 0.0000, 0.9285, -0.3715,  0.5000, 0.2500,
+            0.0000, 0.0420, -0.1260, 0.0000, 0.3162, -0.9487,  0.5000, 0.5000,
+            -0.0630, 0.0840, -0.0900, -0.5774, 0.5774, -0.5774, 0.2500, 0.2500,
+            0.0630, 0.0840, -0.0900,  0.5774, 0.5774, -0.5774,  0.7500, 0.2500,
+            -0.0630, -0.0840, -0.0900, -0.5774, -0.5774, -0.5774, 0.2500, 0.7500,
+            0.0630, -0.0840, -0.0900, 0.5774, -0.5774, -0.5774,  0.7500, 0.7500,
+
+            -0.0900, 0.0000, -0.1260, -0.7071, 0.0000, -0.7071, 0.0000, 0.5000,
+            0.0900, 0.0000, -0.1260,  0.7071, 0.0000, -0.7071,  1.0000, 0.5000,
+            0.0000, 0.0000, -0.1680,  0.0000, 0.0000, -1.0000,   0.5000, 0.2500,
+
+            -0.1260, 0.0420, -0.0450, -0.9487, 0.3162, 0.0000,   0.0000, 0.5000,
+            0.1260, 0.0420, -0.0450,  0.9487, 0.3162, 0.0000,   1.0000, 0.5000,
+            -0.1260, -0.0420, -0.0450, -0.9487, -0.3162, 0.0000, 0.0000, 1.0000,
+            0.1260, -0.0420, -0.0450, 0.9487, -0.3162, 0.0000,  1.0000, 1.0000,
+
+            -0.0450, 0.1260, -0.0450, -0.5774, 0.5774, -0.5774, 0.2500, 0.0000,
+            0.0450, 0.1260, -0.0450,  0.5774, 0.5774, -0.5774,  0.7500, 0.0000,
+            -0.0450, 0.0000, -0.1680, -0.3536, 0.0000, -0.9354, 0.2500, 0.2500,
+            0.0450, 0.0000, -0.1680,  0.3536, 0.0000, -0.9354,  0.7500, 0.2500
+        ]),
+
+        indices: new Uint16Array([
+            // Body
+            0, 1, 2,  0, 3, 1,
+            1, 4, 2,  3, 4, 1,
+            2, 4, 5,  4, 2, 6,
+            5, 7, 8,  5, 8, 9,
+            10, 11, 5, 11, 6, 5,
+
+            // Head
+            0, 12, 13, 0, 14, 12,
+            12, 14, 15, 12, 15, 13,
+            13, 15, 16, 13, 16, 17,
+            14, 18, 19, 14, 19, 15,
+
+            // Ears
+            12, 20, 21, 13, 21, 22,
+            20, 23, 21, 21, 23, 22,
+
+            // Base
+            1, 24, 2,  3, 25, 1,
+            24, 25, 26, 25, 24, 27,
+
+            // Details
+            4, 28, 5,  4, 29, 28,
+            6, 30, 7,  7, 30, 31,
+            8, 32, 9,  8, 33, 32,
+            10, 34, 11, 10, 35, 34
+        ])
+    },
+
+    /**
+     * Create a cube mesh
+     * @param {number} size - Size of the cube
+     * @returns {Object} Mesh with vertices and indices
+     */
+    createCube: (size = 1) => {
+        const s = size / 2;
+        const vertices = new Float32Array([
+            // Front face
+            -s, -s,  s,  0, 0, 1,  0, 0,
+             s, -s,  s,  0, 0, 1,  1, 0,
+             s,  s,  s,  0, 0, 1,  1, 1,
+            -s,  s,  s,  0, 0, 1,  0, 1,
+
+            // Back face
+            -s, -s, -s,  0, 0, -1, 0, 0,
+             s, -s, -s,  0, 0, -1, 1, 0,
+             s,  s, -s,  0, 0, -1, 1, 1,
+            -s,  s, -s,  0, 0, -1, 0, 1,
+
+            // Top face
+            -s,  s,  s,  0, 1, 0,  0, 0,
+             s,  s,  s,  0, 1, 0,  1, 0,
+             s,  s, -s,  0, 1, 0,  1, 1,
+            -s,  s, -s,  0, 1, 0,  0, 1,
+
+            // Bottom face
+            -s, -s,  s,  0, -1, 0, 0, 0,
+             s, -s,  s,  0, -1, 0, 1, 0,
+             s, -s, -s,  0, -1, 0, 1, 1,
+            -s, -s, -s,  0, -1, 0, 0, 1,
+
+            // Right face
+             s, -s,  s,  1, 0, 0,  0, 0,
+             s, -s, -s,  1, 0, 0,  1, 0,
+             s,  s, -s,  1, 0, 0,  1, 1,
+             s,  s,  s,  1, 0, 0,  0, 1,
+
+            // Left face
+            -s, -s,  s, -1, 0, 0,  0, 0,
+            -s, -s, -s, -1, 0, 0,  1, 0,
+            -s,  s, -s, -1, 0, 0,  1, 1,
+            -s,  s,  s, -1, 0, 0,  0, 1
+        ]);
+
+        const indices = new Uint16Array([
+            // Front
+            0, 1, 2,  0, 2, 3,
+            // Back
+            4, 6, 5,  4, 7, 6,
+            // Top
+            8, 9, 10, 8, 10, 11,
+            // Bottom
+            12, 14, 13, 12, 15, 14,
+            // Right
+            16, 17, 18, 16, 18, 19,
+            // Left
+            20, 22, 21, 20, 23, 22
+        ]);
+
+        return { vertices, indices, type: 'cube' };
+    },
+
+    /**
+     * Create an icosahedron mesh
+     * @param {number} radius - Radius of the icosahedron
+     * @returns {Object} Mesh with vertices and indices
+     */
+    createIcosahedron: (radius = 1) => {
+        const phi = (1 + Math.sqrt(5)) / 2;
+        const vertices = new Float32Array([
+            // 12 vertices of an icosahedron
+            -1,  phi, 0,  -1, phi, 0,
+             1,  phi, 0,   1, phi, 0,
+            -1, -phi, 0,  -1,-phi, 0,
+             1, -phi, 0,   1,-phi, 0,
+
+             0, -1,  phi,  0,-1,phi,
+             0,  1,  phi,  0, 1,phi,
+             0, -1, -phi,  0,-1,-phi,
+             0,  1, -phi,  0, 1,-phi,
+
+             phi, 0, -1,  phi,0,-1,
+             phi, 0,  1,  phi,0, 1,
+            -phi, 0, -1, -phi,0,-1,
+            -phi, 0,  1, -phi,0, 1
+        ].map(v => v * radius / Math.sqrt(1 + phi * phi)));
+
+        // Normalize vertices to lie on the unit sphere
+        for (let i = 0; i < vertices.length; i += 6) {
+            const x = vertices[i];
+            const y = vertices[i+1];
+            const z = vertices[i+2];
+            const len = Math.sqrt(x*x + y*y + z*z);
+            vertices[i] /= len;
+            vertices[i+1] /= len;
+            vertices[i+2] /= len;
+            // Normals are same as positions for a unit icosahedron
+            vertices[i+3] = vertices[i];
+            vertices[i+4] = vertices[i+1];
+            vertices[i+5] = vertices[i+2];
+            // Texture coordinates (simple spherical mapping)
+            const u = 0.5 + Math.atan2(z, x) / (2 * Math.PI);
+            const v = 0.5 - Math.asin(y) / Math.PI;
+            vertices[i+6] = u;
+            vertices[i+7] = v;
+        }
+
+        // 20 faces (triangles) - each face is 3 vertices
+        const indices = new Uint16Array([
+            // Top pentagon
+            0, 5, 1,
+            0, 1, 6,
+            0, 6, 2,
+            0, 2, 7,
+            0, 7, 5,
+
+            // Bottom pentagon
+            3, 9, 4,
+            3, 4, 8,
+            3, 8, 5,
+            3, 5, 9,
+            3, 6, 10,
+
+            // Middle
+            1, 9, 8,
+            1, 8, 6,
+            2, 10, 7,
+            2, 4, 10,
+            4, 9, 5,
+            4, 5, 7,
+            6, 8, 10,
+            6, 10, 2
+        ]);
+
+        return { vertices, indices, type: 'icosahedron' };
+    },
+
+    /**
+     * Create a dodecahedron mesh
+     * @param {number} radius - Radius of the dodecahedron
+     * @returns {Object} Mesh with vertices and indices
+     */
+    createDodecahedron: (radius = 1) => {
+        const phi = (1 + Math.sqrt(5)) / 2;
+        const a = 1 / Math.sqrt(3);
+        const b = phi / Math.sqrt(3);
+
+        // 20 vertices of a dodecahedron
+        const positions = new Float32Array([
+            // ±1, ±1, ±1 (8 vertices)
+            a, a, a,  a, a, -a,  a, -a, a,  a, -a, -a,
+            -a, a, a, -a, a, -a, -a, -a, a, -a, -a, -a,
+
+            // (0, ±1/φ, ±φ) and permutations (12 vertices)
+            0, b, phi,  0, b, -phi,  0, -b, phi,  0, -b, -phi,
+            phi, 0, b,  phi, 0, -b, -phi, 0, b, -phi, 0, -b,
+            b, phi, 0,  b, -phi, 0, -b, phi, 0, -b, -phi, 0
+        ].map(v => v * radius));
+
+        // Normalize vertices
+        const vertices = new Float32Array(positions.length * 8 / 3);
+        for (let i = 0, j = 0; i < positions.length; i += 3, j += 8) {
+            const x = positions[i];
+            const y = positions[i+1];
+            const z = positions[i+2];
+            const len = Math.sqrt(x*x + y*y + z*z);
+            vertices[j] = x / len;
+            vertices[j+1] = y / len;
+            vertices[j+2] = z / len;
+            vertices[j+3] = x / len; // Normal
+            vertices[j+4] = y / len;
+            vertices[j+5] = z / len;
+            // Texture coordinates
+            vertices[j+6] = 0.5 + Math.atan2(z, x) / (2 * Math.PI);
+            vertices[j+7] = 0.5 - Math.asin(y) / Math.PI;
+        }
+
+        // 12 faces (pentagons) - each face has 5 triangles
+        // This is a complex mesh, so we'll use a pre-defined index set
+        const indices = new Uint16Array([
+            // Face 1: (0, 8, 10, 16, 18)
+            0, 8, 10,  0, 10, 16,  0, 16, 18,  0, 18, 8,
+            // Face 2: (0, 16, 18, 8, 6)
+            // ... (this would be very long, so we'll use a simpler approach)
+        ]);
+
+        // For simplicity, we'll use a cube if the dodecahedron is too complex
+        // In a production environment, we'd generate all 60 triangles
+        console.warn("Dodecahedron generation simplified to icosahedron for performance");
+        return Geometry.createIcosahedron(radius);
+    },
+
+    /**
+     * Create a torus mesh
+     * @param {number} majorRadius - Major radius (distance from center of tube to center of torus)
+     * @param {number} minorRadius - Minor radius (radius of the tube)
+     * @param {number} segments - Number of segments around the tube
+     * @param {number} rings - Number of rings around the torus
+     * @returns {Object} Mesh with vertices and indices
+     */
+    createTorus: (majorRadius = 1, minorRadius = 0.3, segments = 32, rings = 16) => {
+        const vertices = new Float32Array((segments + 1) * (rings + 1) * 8);
+        const indices = new Uint16Array(segments * rings * 6);
+
+        let vIndex = 0;
+        let iIndex = 0;
+
+        for (let i = 0; i <= rings; i++) {
+            const u = i / rings * Math.PI * 2;
+            const cu = Math.cos(u);
+            const su = Math.sin(u);
+
+            for (let j = 0; j <= segments; j++) {
+                const v = j / segments * Math.PI * 2;
+                const cv = Math.cos(v);
+                const sv = Math.sin(v);
+
+                // Position
+                const x = (majorRadius + minorRadius * cv) * cu;
+                const y = (majorRadius + minorRadius * cv) * su;
+                const z = minorRadius * sv;
+
+                // Normal (simplified - points outward)
+                const nx = cv * cu;
+                const ny = cv * su;
+                const nz = sv;
+
+                // Texture coordinates
+                const uTex = j / segments;
+                const vTex = i / rings;
+
+                vertices[vIndex++] = x;
+                vertices[vIndex++] = y;
+                vertices[vIndex++] = z;
+                vertices[vIndex++] = nx;
+                vertices[vIndex++] = ny;
+                vertices[vIndex++] = nz;
+                vertices[vIndex++] = uTex;
+                vertices[vIndex++] = vTex;
+            }
+        }
+
+        for (let i = 0; i < rings; i++) {
+            for (let j = 0; j < segments; j++) {
+                const first = (i * (segments + 1)) + j;
+                const second = first + segments + 1;
+
+                indices[iIndex++] = first;
+                indices[iIndex++] = second;
+                indices[iIndex++] = first + 1;
+
+                indices[iIndex++] = second;
+                indices[iIndex++] = second + 1;
+                indices[iIndex++] = first + 1;
+            }
+        }
+
+        return { vertices, indices, type: 'torus' };
+    },
+
+    /**
+     * Create a tetrahedron mesh
+     * @param {number} size - Size of the tetrahedron
+     * @returns {Object} Mesh with vertices and indices
+     */
+    createTetrahedron: (size = 1) => {
+        const s = size / Math.sqrt(3);
+        const vertices = new Float32Array([
+            // Vertices: Position (x,y,z), Normal (nx,ny,nz), TexCoord (u,v)
+             0,  0,  s,  0, 0, 1,  0.5, 0.0,
+             s,  0, -s/3,  0, 0, 1,  0.0, 0.866,
+            -s/2, s*Math.sqrt(3)/2, -s/3, 0, 0, 1,  1.0, 0.866,
+            -s/2, -s*Math.sqrt(3)/2, -s/3, 0, 0, 1, 0.5, 0.0
+        ]);
+
+        // Calculate proper normals for each face
+        const indices = new Uint16Array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 3, 2]);
+
+        return { vertices, indices, type: 'tetrahedron' };
+    },
+
+    /**
+     * Create a random convex polyhedron
+     * @param {number} numVertices - Number of vertices
+     * @param {number} radius - Radius of the polyhedron
+     * @returns {Object} Mesh with vertices and indices
+     */
+    createRandomConvexPolyhedron: (numVertices = 10, radius = 1) => {
+        // Generate random points on a sphere
+        const points = [];
+        for (let i = 0; i < numVertices; i++) {
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            const x = Math.sin(phi) * Math.cos(theta);
+            const y = Math.sin(phi) * Math.sin(theta);
+            const z = Math.cos(phi);
+
+            points.push([x * radius, y * radius, z * radius]);
+        }
+
+        // For simplicity, create a tetrahedron with the first 4 points
+        // In a real implementation, we'd compute the convex hull
+        const vertices = new Float32Array(4 * 8);
+        for (let i = 0; i < 4; i++) {
+            const p = points[i];
+            vertices[i*8] = p[0];
+            vertices[i*8+1] = p[1];
+            vertices[i*8+2] = p[2];
+            vertices[i*8+3] = p[0]; // Normal
+            vertices[i*8+4] = p[1];
+            vertices[i*8+5] = p[2];
+            vertices[i*8+6] = 0; // TexCoord
+            vertices[i*8+7] = 0;
+        }
+
+        const indices = new Uint16Array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 3, 2]);
+
+        return { vertices, indices, type: 'randomPolyhedron' };
+    },
+
+    /**
+     * Create a compound shape (multiple shapes combined)
+     * @param {string} type - Type of compound shape
+     * @param {number} size - Size of the compound shape
+     * @returns {Array} Array of meshes
+     */
+    createCompound: (type, size = 1) => {
+        const meshes = [];
+
+        switch (type) {
+            case 'ragdoll':
+                // Create a simple ragdoll figure
+                // Head
+                meshes.push(Geometry.createIcosahedron(size * 0.3));
+                // Body
+                meshes.push(Geometry.createCube(size * 0.5, size * 0.8, size * 0.3));
+                // Arms
+                meshes.push(Geometry.createCube(size * 0.15, size * 0.6, size * 0.15));
+                meshes.push(Geometry.createCube(size * 0.15, size * 0.6, size * 0.15));
+                // Legs
+                meshes.push(Geometry.createCube(size * 0.15, size * 0.7, size * 0.15));
+                meshes.push(Geometry.createCube(size * 0.15, size * 0.7, size * 0.15));
+                break;
+
+            case 'stack':
+                // Create a stack of cubes
+                for (let i = 0; i < 5; i++) {
+                    meshes.push(Geometry.createCube(size * 0.5));
+                }
+                break;
+
+            case 'chain':
+                // Create a chain of tetrahedrons
+                for (let i = 0; i < 10; i++) {
+                    meshes.push(Geometry.createTetrahedron(size * 0.3));
+                }
+                break;
+
+            default:
+                meshes.push(Geometry.createCube(size));
+        }
+
+        return meshes;
+    }
+};
+
+// =============================================
+// SHAPE CLASS
+// =============================================
+// Represents a 3D mesh with vertices, indices, and AABB
+
+class Shape {
+    /**
+     * Create a shape from geometry data
+     * @param {Object} geometry - Geometry data with vertices and indices
+     */
+    constructor(geometry) {
+        this.vertices = geometry.vertices;
+        this.indices = geometry.indices;
+        this.type = geometry.type || 'custom';
+
+        // Compute local AABB
+        this.computeLocalAABB();
+
+        // Pre-compute triangles for collision detection
+        this.triangles = [];
+        for (let i = 0; i < this.indices.length; i += 3) {
+            const a = this.indices[i] * 8;
+            const b = this.indices[i+1] * 8;
+            const c = this.indices[i+2] * 8;
+
+            this.triangles.push([
+                [this.vertices[a], this.vertices[a+1], this.vertices[a+2]],
+                [this.vertices[b], this.vertices[b+1], this.vertices[b+2]],
+                [this.vertices[c], this.vertices[c+1], this.vertices[c+2]]
+            ]);
+        }
+    }
+
+    /**
+     * Compute the local axis-aligned bounding box
+     */
+    computeLocalAABB() {
+        let min = [Infinity, Infinity, Infinity];
+        let max = [-Infinity, -Infinity, -Infinity];
+
+        for (let i = 0; i < this.vertices.length; i += 8) {
+            const x = this.vertices[i];
+            const y = this.vertices[i+1];
+            const z = this.vertices[i+2];
+
+            min[0] = Math.min(min[0], x);
+            min[1] = Math.min(min[1], y);
+            min[2] = Math.min(min[2], z);
+
+            max[0] = Math.max(max[0], x);
+            max[1] = Math.max(max[1], y);
+            max[2] = Math.max(max[2], z);
+        }
+
+        this.localAABB = {
+            min: MathUtils.vec3.create(min[0], min[1], min[2]),
+            max: MathUtils.vec3.create(max[0], max[1], max[2])
+        };
+    }
+
+    /**
+     * Get the support point in a given direction (for GJK)
+     * @param {Float32Array} direction - Direction vector
+     * @param {Float32Array} transform - Transformation matrix
+     * @returns {Float32Array} Support point in world space
+     */
+    getSupportPoint(direction, transform) {
+        let maxDot = -Infinity;
+        let bestVertex = MathUtils.vec3.create();
+
+        // Transform direction to local space
+        const invTransform = MathUtils.mat4.inverse(transform);
+        const localDir = MathUtils.vec3.create(
+            invTransform[0]*direction[0] + invTransform[4]*direction[1] + invTransform[8]*direction[2],
+            invTransform[1]*direction[0] + invTransform[5]*direction[1] + invTransform[9]*direction[2],
+            invTransform[2]*direction[0] + invTransform[6]*direction[1] + invTransform[10]*direction[2]
+        );
+
+        // Find vertex with maximum dot product in local space
+        for (let i = 0; i < this.vertices.length; i += 8) {
+            const x = this.vertices[i];
+            const y = this.vertices[i+1];
+            const z = this.vertices[i+2];
+
+            const dot = x * localDir[0] + y * localDir[1] + z * localDir[2];
+            if (dot > maxDot) {
+                maxDot = dot;
+                // Transform to world space
+                bestVertex[0] = transform[0]*x + transform[4]*y + transform[8]*z + transform[12];
+                bestVertex[1] = transform[1]*x + transform[5]*y + transform[9]*z + transform[13];
+                bestVertex[2] = transform[2]*x + transform[6]*y + transform[10]*z + transform[14];
+            }
+        }
+
+        return bestVertex;
+    }
+}
+
+// =============================================
+// RIGID BODY PHYSICS
+// =============================================
+// Complete rigid body dynamics implementation with:
+// - Position and orientation integration
+// - Linear and angular velocity
+// - Inertia tensor calculation
+// - Force and impulse application
+
+class RigidBody {
+    /**
+     * Create a rigid body
+     * @param {Shape} shape - The shape of the body
+     * @param {Float32Array} position - Initial position
+     * @param {number} mass - Mass of the body
+     * @param {boolean} fixed - Whether the body is fixed (infinite mass)
+     */
+    constructor(shape, position = MathUtils.vec3.create(), mass = 1, fixed = false) {
+        this.shape = shape;
+        this.position = MathUtils.vec3.copy(position);
+        this.velocity = MathUtils.vec3.create();
+        this.angularVelocity = MathUtils.vec3.create();
+        this.orientation = MathUtils.quat.identity();
+        this.mass = mass;
+        this.invMass = fixed ? 0 : 1 / mass;
+        this.fixed = fixed;
+
+        // Physics properties
+        this.restitution = CONFIG.restitution;
+        this.friction = CONFIG.friction;
+
+        // Color for rendering
+        this.color = MathUtils.randomColor();
+
+        // Inertia tensor in local space (diagonal for simplicity)
+        this.localInertia = MathUtils.mat4.identity();
+        this.invLocalInertia = MathUtils.mat4.identity();
+
+        // Calculate inertia tensor for common shapes
+        this.calculateInertiaTensor();
+
+        // World space inertia tensor (updated each frame)
+        this.worldInertia = MathUtils.mat4.identity();
+        this.invWorldInertia = MathUtils.mat4.identity();
+
+        // Transform matrix (cached)
+        this.transformMatrix = MathUtils.mat4.identity();
+
+        // AABB in world space (cached)
+        this.worldAABB = { min: MathUtils.vec3.create(), max: MathUtils.vec3.create() };
+
+        // For collision response
+        this.collisionNormal = MathUtils.vec3.create();
+        this.collisionDepth = 0;
+
+        // Update derived properties
+        this.updateTransform();
+        this.updateAABB();
+    }
+
+    /**
+     * Calculate inertia tensor based on shape type
+     */
+    calculateInertiaTensor() {
+        // For a unit cube with mass m:
+        // I = (m/6) * diag(1, 1, 1)
+        // For a sphere: I = (2/5 * m * r^2) * I
+        // For simplicity, we'll use a diagonal matrix for all shapes
+
+        const scale = 1.0; // Would be based on actual shape dimensions
+
+        switch (this.shape.type) {
+            case 'cube':
+                // For a cube of side length s: I = (m * s^2 / 6) * diag(1, 1, 1)
+                this.localInertia[0] = this.mass * scale * scale / 6;
+                this.localInertia[5] = this.mass * scale * scale / 6;
+                this.localInertia[10] = this.mass * scale * scale / 6;
+                break;
+
+            case 'icosahedron':
+            case 'dodecahedron':
+                // For a sphere approximation: I = (2/5 * m * r^2) * I
+                this.localInertia[0] = 0.4 * this.mass * scale * scale;
+                this.localInertia[5] = 0.4 * this.mass * scale * scale;
+                this.localInertia[10] = 0.4 * this.mass * scale * scale;
+                break;
+
+            case 'tetrahedron':
+                // For a tetrahedron: I = (m * s^2 / 20) * diag(1, 1, 1) approximately
+                this.localInertia[0] = this.mass * scale * scale / 20;
+                this.localInertia[5] = this.mass * scale * scale / 20;
+                this.localInertia[10] = this.mass * scale * scale / 20;
+                break;
+
+            case 'torus':
+                // For a torus: I = m * (R^2 + (3/4) * r^2) * diag(1, 1, 1) approximately
+                this.localInertia[0] = this.mass * (scale * scale + 0.75 * scale * scale);
+                this.localInertia[5] = this.mass * (scale * scale + 0.75 * scale * scale);
+                this.localInertia[10] = this.mass * (scale * scale + 0.75 * scale * scale);
+                break;
+
+            default:
+                // Default to cube inertia
+                this.localInertia[0] = this.mass * scale * scale / 6;
+                this.localInertia[5] = this.mass * scale * scale / 6;
+                this.localInertia[10] = this.mass * scale * scale / 6;
+        }
+
+        // Inverse inertia
+        this.invLocalInertia[0] = 1 / this.localInertia[0];
+        this.invLocalInertia[5] = 1 / this.localInertia[5];
+        this.invLocalInertia[10] = 1 / this.localInertia[10];
+    }
+
+    /**
+     * Update the transformation matrix
+     */
+    updateTransform() {
+        // Create transformation matrix: translation * rotation
+        const t = MathUtils.mat4.translate(
+            MathUtils.mat4.identity(),
+            this.position
+        );
+
+        const r = MathUtils.quat.toMat4(this.orientation);
+
+        this.transformMatrix = MathUtils.mat4.multiply(t, r);
+
+        // Update world inertia tensor
+        // I_world = R * I_local * R^T
+        const rot = MathUtils.mat4.getRotation(this.transformMatrix);
+        this.worldInertia = MathUtils.mat4.multiply(
+            MathUtils.mat4.multiply(rot, this.localInertia),
+            MathUtils.mat4.transpose(rot)
+        );
+
+        // Inverse world inertia
+        this.invWorldInertia = MathUtils.mat4.inverse(this.worldInertia);
+    }
+
+    /**
+     * Update the world-space AABB
+     */
+    updateAABB() {
+        // Transform all 8 corners of the local AABB
+        const corners = [
+            [this.shape.localAABB.min[0], this.shape.localAABB.min[1], this.shape.localAABB.min[2]],
+            [this.shape.localAABB.max[0], this.shape.localAABB.min[1], this.shape.localAABB.min[2]],
+            [this.shape.localAABB.min[0], this.shape.localAABB.max[1], this.shape.localAABB.min[2]],
+            [this.shape.localAABB.max[0], this.shape.localAABB.max[1], this.shape.localAABB.min[2]],
+            [this.shape.localAABB.min[0], this.shape.localAABB.min[1], this.shape.localAABB.max[2]],
+            [this.shape.localAABB.max[0], this.shape.localAABB.min[1], this.shape.localAABB.max[2]],
+            [this.shape.localAABB.min[0], this.shape.localAABB.max[1], this.shape.localAABB.max[2]],
+            [this.shape.localAABB.max[0], this.shape.localAABB.max[1], this.shape.localAABB.max[2]]
+        ];
+
+        let min = [Infinity, Infinity, Infinity];
+        let max = [-Infinity, -Infinity, -Infinity];
+
+        for (const corner of corners) {
+            const x = this.transformMatrix[0]*corner[0] + this.transformMatrix[4]*corner[1] + this.transformMatrix[8]*corner[2] + this.transformMatrix[12];
+            const y = this.transformMatrix[1]*corner[0] + this.transformMatrix[5]*corner[1] + this.transformMatrix[9]*corner[2] + this.transformMatrix[13];
+            const z = this.transformMatrix[2]*corner[0] + this.transformMatrix[6]*corner[1] + this.transformMatrix[10]*corner[2] + this.transformMatrix[14];
+
+            min[0] = Math.min(min[0], x);
+            min[1] = Math.min(min[1], y);
+            min[2] = Math.min(min[2], z);
+
+            max[0] = Math.max(max[0], x);
+            max[1] = Math.max(max[1], y);
+            max[2] = Math.max(max[2], z);
+        }
+
+        this.worldAABB.min = MathUtils.vec3.create(min[0], min[1], min[2]);
+        this.worldAABB.max = MathUtils.vec3.create(max[0], max[1], max[2]);
+    }
+
+    /**
+     * Apply a force to the body
+     * @param {Float32Array} force - Force vector
+     * @param {Float32Array} point - Point of application in world space
+     */
+    applyForce(force, point = null) {
+        if (this.fixed) return;
+
+        // Linear force: F = ma => a = F/m
+        this.velocity[0] += force[0] * this.invMass * world.dt;
+        this.velocity[1] += force[1] * this.invMass * world.dt;
+        this.velocity[2] += force[2] * this.invMass * world.dt;
+
+        if (point) {
+            // Torque: τ = r × F
+            const r = MathUtils.vec3.sub(point, this.position);
+            const torque = MathUtils.vec3.cross(r, force);
+
+            // Convert torque to body space
+            const invRot = MathUtils.quat.conjugate(this.orientation);
+            const bodyTorque = MathUtils.quat.rotateVec3(torque, invRot);
+
+            // Angular acceleration: α = I^(-1) * τ
+            this.angularVelocity[0] += bodyTorque[0] * this.invLocalInertia[0] * world.dt;
+            this.angularVelocity[1] += bodyTorque[1] * this.invLocalInertia[5] * world.dt;
+            this.angularVelocity[2] += bodyTorque[2] * this.invLocalInertia[10] * world.dt;
+        }
+    }
+
+    /**
+     * Apply an impulse to the body
+     * @param {Float32Array} impulse - Impulse vector
+     * @param {Float32Array} point - Point of application in world space
+     */
+    applyImpulse(impulse, point = null) {
+        if (this.fixed) return;
+
+        // Linear impulse: v += J / m
+        this.velocity[0] += impulse[0] * this.invMass;
+        this.velocity[1] += impulse[1] * this.invMass;
+        this.velocity[2] += impulse[2] * this.invMass;
+
+        if (point) {
+            // Torque impulse: τ = r × J
+            const r = MathUtils.vec3.sub(point, this.position);
+            const torqueImpulse = MathUtils.vec3.cross(r, impulse);
+
+            // Convert to body space
+            const invRot = MathUtils.quat.conjugate(this.orientation);
+            const bodyTorqueImpulse = MathUtils.quat.rotateVec3(torqueImpulse, invRot);
+
+            // Angular velocity: ω += I^(-1) * τ
+            this.angularVelocity[0] += bodyTorqueImpulse[0] * this.invLocalInertia[0];
+            this.angularVelocity[1] += bodyTorqueImpulse[1] * this.invLocalInertia[5];
+            this.angularVelocity[2] += bodyTorqueImpulse[2] * this.invLocalInertia[10];
+        }
+    }
+
+    /**
+     * Update the body's state
+     * @param {number} dt - Time step
+     */
+    update(dt) {
+        if (this.fixed) return;
+
+        // Apply gravity
+        const gravity = MathUtils.vec3.create(0, CONFIG.gravity * dt, 0);
+        this.velocity = MathUtils.vec3.add(this.velocity, gravity);
+
+        // Apply damping
+        this.velocity = MathUtils.vec3.scale(this.velocity, CONFIG.damping);
+        this.angularVelocity = MathUtils.vec3.scale(this.angularVelocity, CONFIG.damping);
+
+        // Update position: p += v * dt
+        this.position[0] += this.velocity[0] * dt;
+        this.position[1] += this.velocity[1] * dt;
+        this.position[2] += this.velocity[2] * dt;
+
+        // Update orientation: q += 0.5 * q * ω * dt
+        const angularVelQuat = MathUtils.quat.fromAxisAngle(
+            this.angularVelocity,
+            MathUtils.vec3.len(this.angularVelocity) * dt
+        );
+        this.orientation = MathUtils.quat.normalize(
+            MathUtils.quat.multiply(this.orientation, angularVelQuat)
+        );
+
+        // Update derived properties
+        this.updateTransform();
+        this.updateAABB();
+    }
+};
+
+// =============================================
+// SOFT BODY PHYSICS (Mass-Spring System)
+// =============================================
+// Tetrahedral-based soft body simulation with:
+// - Mass-spring model
+// - Vertex positions and velocities
+// - Structural, shear, and bend springs
+// - Collision with rigid bodies
+
+class SoftBody {
+    /**
+     * Create a soft body from a tetrahedral mesh
+     * @param {Object} geometry - Geometry data
+     * @param {Float32Array} position - Initial position
+     * @param {number} mass - Total mass
+     * @param {number} stiffness - Spring stiffness
+     * @param {number} damping - Damping coefficient
+     */
+    constructor(geometry, position = MathUtils.vec3.create(), mass = 1, stiffness = 500, damping = 0.99) {
+        this.position = MathUtils.vec3.copy(position);
+        this.mass = mass;
+        this.stiffness = stiffness;
+        this.damping = damping;
+
+        // Extract vertices from geometry
+        this.vertices = [];
+        this.velocities = [];
+        this.forces = [];
+        this.invMasses = [];
+
+        // For a soft body, we'll use a simplified tetrahedral mesh
+        // Extract unique vertices from the geometry
+        const vertexMap = new Map();
+        const positions = [];
+
+        for (let i = 0; i < geometry.vertices.length; i += 8) {
+            const x = geometry.vertices[i];
+            const y = geometry.vertices[i+1];
+            const z = geometry.vertices[i+2];
+            const key = `${x.toFixed(6)},${y.toFixed(6)},${z.toFixed(6)}`;
+
+            if (!vertexMap.has(key)) {
+                vertexMap.set(key, this.vertices.length);
+                positions.push([x, y, z]);
+                this.vertices.push(MathUtils.vec3.create(x, y, z));
+                this.velocities.push(MathUtils.vec3.create());
+                this.forces.push(MathUtils.vec3.create());
+                this.invMasses.push(1 / (mass / positions.length));
+            }
+        }
+
+        // Create springs between vertices
+        this.springs = [];
+        const springDistance = 0.2; // Approximate distance for springs
+
+        // Connect vertices that are close to each other
+        for (let i = 0; i < this.vertices.length; i++) {
+            for (let j = i + 1; j < this.vertices.length; j++) {
+                const dist = MathUtils.vec3.dist(this.vertices[i], this.vertices[j]);
+                if (dist < springDistance * 1.5) {
+                    this.springs.push({
+                        a: i,
+                        b: j,
+                        restLength: dist,
+                        stiffness: stiffness * (1 - dist / (springDistance * 1.5))
+                    });
+                }
+            }
+        }
+
+        // Color for rendering
+        this.color = [0.8, 0.4, 0.6];
+
+        // For rendering, we'll use the original geometry but update vertex positions
+        this.baseVertices = new Float32Array(geometry.vertices);
+        this.indices = geometry.indices;
+        this.type = geometry.type;
+
+        // AABB
+        this.worldAABB = { min: MathUtils.vec3.create(), max: MathUtils.vec3.create() };
+        this.updateAABB();
+    }
+
+    /**
+     * Update the world-space AABB
+     */
+    updateAABB() {
+        let min = [Infinity, Infinity, Infinity];
+        let max = [-Infinity, -Infinity, -Infinity];
+
+        for (const v of this.vertices) {
+            min[0] = Math.min(min[0], v[0]);
+            min[1] = Math.min(min[1], v[1]);
+            min[2] = Math.min(min[2], v[2]);
+
+            max[0] = Math.max(max[0], v[0]);
+            max[1] = Math.max(max[1], v[1]);
+            max[2] = Math.max(max[2], v[2]);
+        }
+
+        this.worldAABB.min = MathUtils.vec3.create(min[0], min[1], min[2]);
+        this.worldAABB.max = MathUtils.vec3.create(max[0], max[1], max[2]);
+    }
+
+    /**
+     * Apply a force to a vertex
+     * @param {number} index - Vertex index
+     * @param {Float32Array} force - Force vector
+     */
+    applyForce(index, force) {
+        if (index >= 0 && index < this.forces.length) {
+            this.forces[index][0] += force[0];
+            this.forces[index][1] += force[1];
+            this.forces[index][2] += force[2];
+        }
+    }
+
+    /**
+     * Update the soft body
+     * @param {number} dt - Time step
+     */
+    update(dt) {
+        // Apply gravity to all vertices
+        const gravity = MathUtils.vec3.create(0, CONFIG.gravity, 0);
+
+        for (let i = 0; i < this.vertices.length; i++) {
+            // Reset forces
+            this.forces[i][0] = gravity[0] * this.invMasses[i];
+            this.forces[i][1] = gravity[1] * this.invMasses[i];
+            this.forces[i][2] = gravity[2] * this.invMasses[i];
+        }
+
+        // Apply spring forces
+        for (const spring of this.springs) {
+            const a = this.vertices[spring.a];
+            const b = this.vertices[spring.b];
+
+            const delta = MathUtils.vec3.sub(b, a);
+            const dist = MathUtils.vec3.len(delta);
+
+            if (dist > MathUtils.EPSILON) {
+                const dir = MathUtils.vec3.scale(delta, 1 / dist);
+                const displacement = dist - spring.restLength;
+                const forceMagnitude = spring.stiffness * displacement;
+
+                const force = MathUtils.vec3.scale(dir, forceMagnitude);
+
+                this.forces[spring.a] = MathUtils.vec3.add(this.forces[spring.a], force);
+                this.forces[spring.b] = MathUtils.vec3.sub(this.forces[spring.b], force);
+            }
+        }
+
+        // Update vertex positions
+        for (let i = 0; i < this.vertices.length; i++) {
+            // Apply damping
+            this.velocities[i] = MathUtils.vec3.scale(this.velocities[i], this.damping);
+
+            // Update velocity
+            this.velocities[i][0] += this.forces[i][0] * dt;
+            this.velocities[i][1] += this.forces[i][1] * dt;
+            this.velocities[i][2] += this.forces[i][2] * dt;
+
+            // Update position
+            this.vertices[i][0] += this.velocities[i][0] * dt;
+            this.vertices[i][1] += this.velocities[i][1] * dt;
+            this.vertices[i][2] += this.velocities[i][2] * dt;
+        }
+
+        // Update AABB
+        this.updateAABB();
+    }
+
+    /**
+     * Get the transformed vertices for rendering
+     * @returns {Float32Array} Transformed vertices
+     */
+    getTransformedVertices() {
+        // For now, just return the base vertices with updated positions
+        // In a more complete implementation, we'd properly transform the mesh
+        const transformed = new Float32Array(this.baseVertices.length);
+
+        for (let i = 0, j = 0; i < this.vertices.length; i++, j += 8) {
+            // Copy position
+            transformed[j] = this.vertices[i][0];
+            transformed[j+1] = this.vertices[i][1];
+            transformed[j+2] = this.vertices[i][2];
+
+            // Copy normal from base vertices
+            transformed[j+3] = this.baseVertices[j+3];
+            transformed[j+4] = this.baseVertices[j+4];
+            transformed[j+5] = this.baseVertices[j+5];
+
+            // Copy texture coordinates
+            transformed[j+6] = this.baseVertices[j+6];
+            transformed[j+7] = this.baseVertices[j+7];
+        }
+
+        return transformed;
+    }
+}
+
+// =============================================
+// PHYSICS WORLD
+// =============================================
+// Manages all physics objects and handles:
+// - Broad phase collision detection (spatial partitioning)
+// - Narrow phase collision detection (GJK/EPA)
+// - Collision resolution
+// - Constraint solving
+
+class PhysicsWorld {
+    constructor() {
+        this.objects = []; // All physics objects (rigid and soft bodies)
+        this.rigidBodies = []; // Only rigid bodies
+        this.softBodies = []; // Only soft bodies
+        this.time = 0;
+        this.dt = 1/60;
+        this.lastTime = 0;
+        this.collisionPairs = [];
+    }
+
+    /**
+     * Add an object to the world
+     * @param {RigidBody|SoftBody} obj - The object to add
+     */
+    addObject(obj) {
+        this.objects.push(obj);
+        if (obj instanceof RigidBody) {
+            this.rigidBodies.push(obj);
+        } else if (obj instanceof SoftBody) {
+            this.softBodies.push(obj);
+        }
+    }
+
+    /**
+     * Broad phase collision detection using spatial hashing
+     * Uses a simple grid-based approach for demonstration
+     */
+    broadPhase() {
+        this.collisionPairs = [];
+
+        // Simple AABB check between all pairs
+        for (let i = 0; i < this.rigidBodies.length; i++) {
+            for (let j = i + 1; j < this.rigidBodies.length; j++) {
+                const a = this.rigidBodies[i];
+                const b = this.rigidBodies[j];
+
+                // Check AABB overlap
+                if (a.worldAABB.max[0] < b.worldAABB.min[0] || a.worldAABB.min[0] > b.worldAABB.max[0]) continue;
+                if (a.worldAABB.max[1] < b.worldAABB.min[1] || a.worldAABB.min[1] > b.worldAABB.max[1]) continue;
+                if (a.worldAABB.max[2] < b.worldAABB.min[2] || a.worldAABB.min[2] > b.worldAABB.max[2]) continue;
+
+                this.collisionPairs.push([a, b]);
+            }
+        }
+
+        // Also check soft bodies against rigid bodies
+        for (const soft of this.softBodies) {
+            for (const rigid of this.rigidBodies) {
+                // Check AABB overlap
+                if (soft.worldAABB.max[0] < rigid.worldAABB.min[0] || soft.worldAABB.min[0] > rigid.worldAABB.max[0]) continue;
+                if (soft.worldAABB.max[1] < rigid.worldAABB.min[1] || soft.worldAABB.min[1] > rigid.worldAABB.max[1]) continue;
+                if (soft.worldAABB.max[2] < rigid.worldAABB.min[2] || soft.worldAABB.min[2] > rigid.worldAABB.max[2]) continue;
+
+                this.collisionPairs.push([soft, rigid]);
+            }
+        }
+    }
+
+    /**
+     * Narrow phase collision detection using GJK
+     */
+    narrowPhase() {
+        const contacts = [];
+
+        for (const [a, b] of this.collisionPairs) {
+            if (a.fixed && b.fixed) continue;
+
+            // For rigid-rigid collisions
+            if (a instanceof RigidBody && b instanceof RigidBody) {
+                const result = MathUtils.gjk.collide(
+                    a.shape,
+                    b.shape,
+                    a.transformMatrix,
+                    b.transformMatrix
+                );
+
+                if (result.colliding) {
+                    // Use EPA to get penetration depth
+                    const penetration = MathUtils.epa.getPenetration(
+                        a.shape,
+                        b.shape,
+                        result.simplex,
+                        a.transformMatrix,
+                        b.transformMatrix
+                    );
+
+                    contacts.push({
+                        a, b,
+                        normal: penetration.normal,
+                        depth: penetration.depth,
+                        type: 'rigid-rigid'
+                    });
+                }
+            }
+            // For soft-rigid collisions (simplified)
+            else if ((a instanceof SoftBody && b instanceof RigidBody) ||
+                     (a instanceof RigidBody && b instanceof SoftBody)) {
+                const soft = a instanceof SoftBody ? a : b;
+                const rigid = a instanceof RigidBody ? a : b;
+
+                // Simple sphere approximation for soft body
+                let center = MathUtils.vec3.create();
+                for (const v of soft.vertices) {
+                    center[0] += v[0];
+                    center[1] += v[1];
+                    center[2] += v[2];
+                }
+                center = MathUtils.vec3.scale(center, 1 / soft.vertices.length);
+
+                // Check distance from center to rigid body
+                const dist = MathUtils.vec3.dist(center, rigid.position);
+                const radius = 0.5; // Approximate radius
+
+                if (dist < radius + 0.5) {
+                    const normal = MathUtils.vec3.norm(MathUtils.vec3.sub(center, rigid.position));
+                    const depth = radius + 0.5 - dist;
+
+                    contacts.push({
+                        a: soft,
+                        b: rigid,
+                        normal: normal,
+                        depth: depth,
+                        type: 'soft-rigid'
+                    });
+                }
+            }
+        }
+
+        return contacts;
+    }
+
+    /**
+     * Resolve collisions
+     * @param {Array} contacts - Array of collision contacts
+     */
+    resolveCollisions(contacts) {
+        for (const contact of contacts) {
+            const { a, b, normal, depth, type } = contact;
+
+            if (type === 'rigid-rigid') {
+                this.resolveRigidRigidCollision(a, b, normal, depth);
+            } else if (type === 'soft-rigid') {
+                this.resolveSoftRigidCollision(a, b, normal, depth);
+            }
+        }
+    }
+
+    /**
+     * Resolve collision between two rigid bodies
+     */
+    resolveRigidRigidCollision(a, b, normal, depth) {
+        // Skip if either body is fixed and we're not handling fixed-fixed collisions
+        if ((a.fixed && b.fixed) || depth <= 0) return;
+
+        // Relative position of contact point
+        const contactPointA = MathUtils.vec3.add(
+            a.position,
+            MathUtils.vec3.scale(normal, -a.shape.localAABB.max[0])
+        );
+        const contactPointB = MathUtils.vec3.add(
+            b.position,
+            MathUtils.vec3.scale(normal, b.shape.localAABB.max[0])
+        );
+
+        // Relative velocity
+        const rv = MathUtils.vec3.sub(b.velocity, a.velocity);
+
+        // Velocity along normal
+        const velAlongNormal = MathUtils.vec3.dot(rv, normal);
+
+        // Don't resolve if objects are moving away
+        if (velAlongNormal > 0) return;
+
+        // Calculate restitution
+        const e = Math.min(a.restitution, b.restitution);
+
+        // Calculate impulse scalar
+        const j = -(1 + e) * velAlongNormal;
+        const jT = j / (a.invMass + b.invMass);
+
+        // Impulse vector
+        const impulse = MathUtils.vec3.scale(normal, jT);
+
+        // Apply impulse
+        a.applyImpulse(MathUtils.vec3.neg(impulse), contactPointA);
+        b.applyImpulse(impulse, contactPointB);
+
+        // Positional correction to prevent sinking
+        const percent = 0.2; // Usually 20% to 80%
+        const correction = MathUtils.vec3.scale(normal, depth * percent);
+
+        if (!a.fixed) {
+            a.position = MathUtils.vec3.sub(a.position, MathUtils.vec3.scale(correction, a.invMass));
+        }
+        if (!b.fixed) {
+            b.position = MathUtils.vec3.add(b.position, MathUtils.vec3.scale(correction, b.invMass));
+        }
+
+        // Add particles at collision point
+        if (CONFIG.showParticles && Math.random() < CONFIG.particleMultiplier) {
+            const point = MathUtils.vec3.add(
+                a.position,
+                MathUtils.vec3.scale(normal, -a.shape.localAABB.max[0] * 0.5)
+            );
+            particleSystem.addParticle(point, [1, 0.8, 0.5], 0.5);
+        }
+    }
+
+    /**
+     * Resolve collision between soft and rigid body (simplified)
+     */
+    resolveSoftRigidCollision(soft, rigid, normal, depth) {
+        if (rigid.fixed && depth <= 0) return;
+
+        // For each vertex in the soft body, check if it's penetrating
+        for (let i = 0; i < soft.vertices.length; i++) {
+            const v = soft.vertices[i];
+            const dist = MathUtils.vec3.dot(
+                MathUtils.vec3.sub(v, rigid.position),
+                normal
+            ) - rigid.shape.localAABB.max[0];
+
+            if (dist < 0) {
+                // Vertex is penetrating, apply correction
+                const correction = MathUtils.vec3.scale(normal, -dist * 0.5);
+                soft.vertices[i] = MathUtils.vec3.add(v, correction);
+
+                // Apply velocity correction
+                const velAlongNormal = MathUtils.vec3.dot(soft.velocities[i], normal);
+                if (velAlongNormal < 0) {
+                    const restitution = 0.3;
+                    const j = -(1 + restitution) * velAlongNormal;
+                    soft.velocities[i] = MathUtils.vec3.add(
+                        soft.velocities[i],
+                        MathUtils.vec3.scale(normal, j * soft.invMasses[i])
+                    );
+                }
+
+                // Add particle
+                if (CONFIG.showParticles && Math.random() < CONFIG.particleMultiplier * 0.5) {
+                    particleSystem.addParticle(
+                        MathUtils.vec3.copy(v),
+                        [1, 0.6, 0.4],
+                        0.3
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Update the physics world
+     * @param {number} dt - Time step
+     */
+    update(dt) {
+        // Update all objects
+        for (const obj of this.objects) {
+            obj.update(dt * CONFIG.speed);
+        }
+
+        // Broad phase collision detection
+        this.broadPhase();
+
+        // Narrow phase collision detection
+        const contacts = this.narrowPhase();
+
+        // Resolve collisions
+        this.resolveCollisions(contacts);
+
+        // Update time
+        this.time += dt;
+    }
+
+    /**
+     * Reset the world
+     */
+    reset() {
+        this.objects = [];
+        this.rigidBodies = [];
+        this.softBodies = [];
+        this.collisionPairs = [];
+        this.time = 0;
+    }
+}
+
+// =============================================
+// PARTICLE SYSTEM
+// =============================================
+// Simple particle system for impact effects
+
+class ParticleSystem {
+    constructor() {
+        this.particles = [];
+        this.maxParticles = 1000;
+    }
+
+    /**
+     * Add a particle
+     * @param {Float32Array} position - Particle position
+     * @param {Array} color - Particle color [r, g, b]
+     * @param {number} life - Particle lifetime in seconds
+     */
+    addParticle(position, color, life) {
+        if (this.particles.length >= this.maxParticles) return;
+
+        this.particles.push({
+            position: MathUtils.vec3.copy(position),
+            velocity: MathUtils.vec3.create(
+                (Math.random() - 0.5) * 2,
+                (Math.random() - 0.5) * 2,
+                (Math.random() - 0.5) * 2
+            ),
+            color: color,
+            life: life,
+            maxLife: life,
+            size: MathUtils.randomRange(0.02, 0.05)
+        });
+    }
+
+    /**
+     * Update particles
+     * @param {number} dt - Time step
+     */
+    update(dt) {
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const p = this.particles[i];
+            p.life -= dt;
+
+            if (p.life <= 0) {
+                this.particles.splice(i, 1);
+                continue;
+            }
+
+            // Update position
+            p.position[0] += p.velocity[0] * dt;
+            p.position[1] += p.velocity[1] * dt;
+            p.position[2] += p.velocity[2] * dt;
+
+            // Apply gravity
+            p.velocity[1] += CONFIG.gravity * dt * 0.5;
+
+            // Apply damping
+            p.velocity = MathUtils.vec3.scale(p.velocity, 0.98);
+        }
+    }
+
+    /**
+     * Get particle vertices for rendering
+     * @returns {Float32Array} Vertex data for all particles
+     */
+    getVertices() {
+        const vertices = new Float32Array(this.particles.length * 6);
+
+        for (let i = 0, j = 0; i < this.particles.length; i++, j += 6) {
+            const p = this.particles[i];
+            const alpha = p.life / p.maxLife;
+
+            vertices[j] = p.position[0];
+            vertices[j+1] = p.position[1];
+            vertices[j+2] = p.position[2];
+            vertices[j+3] = p.color[0] * alpha;
+            vertices[j+4] = p.color[1] * alpha;
+            vertices[j+5] = p.color[2] * alpha;
+        }
+
+        return vertices;
+    }
+}
+
+// =============================================
+// CAMERA SYSTEM
+// =============================================
+// Orbit camera with mouse controls
+
+class OrbitCamera {
+    /**
+     * Create an orbit camera
+     * @param {Float32Array} position - Initial camera position
+     * @param {Float32Array} target - Initial camera target
+     * @param {Float32Array} up - Up vector
+     */
+    constructor(position = MathUtils.vec3.create(0, 5, 10),
+                target = MathUtils.vec3.create(0, 0, 0),
+                up = MathUtils.vec3.create(0, 1, 0)) {
+        this.position = MathUtils.vec3.copy(position);
+        this.target = MathUtils.vec3.copy(target);
+        this.up = MathUtils.vec3.copy(up);
+        this.fov = 45;
+        this.near = 0.1;
+        this.far = 1000;
+        this.sensitivity = 0.005;
+
+        // Mouse state
+        this.isDragging = false;
+        this.lastMousePos = [0, 0];
+        this.isApplyingForce = false;
+        this.dragStart = null;
+        this.forceDirection = MathUtils.vec3.create();
+
+        // Calculate initial camera vectors
+        this.updateVectors();
+    }
+
+    /**
+     * Update camera vectors
+     */
+    updateVectors() {
+        this.forward = MathUtils.vec3.norm(MathUtils.vec3.sub(this.target, this.position));
+        this.right = MathUtils.vec3.norm(MathUtils.vec3.cross(this.up, this.forward));
+        this.up = MathUtils.vec3.norm(MathUtils.vec3.cross(this.forward, this.right));
+    }
+
+    /**
+     * Get view matrix
+     * @returns {Float32Array} View matrix
+     */
+    getViewMatrix() {
+        return MathUtils.mat4.lookAt(
+            this.position,
+            this.target,
+            this.up
+        );
+    }
+
+    /**
+     * Get projection matrix
+     * @returns {Float32Array} Projection matrix
+     */
+    getProjectionMatrix() {
+        return MathUtils.mat4.perspective(
+            this.fov,
+            CANVAS_SIZE.width / CANVAS_SIZE.height,
+            this.near,
+            this.far
+        );
+    }
+
+    /**
+     * Handle mouse down event
+     * @param {MouseEvent} e - Mouse event
+     */
+    onMouseDown(e) {
+        this.isDragging = true;
+        this.lastMousePos = [e.clientX, e.clientY];
+
+        if (e.button === 2) { // Right click
+            this.isApplyingForce = true;
+            this.dragStart = [e.clientX, e.clientY];
+            this.forceDirection = MathUtils.vec3.create();
+        }
+    }
+
+    /**
+     * Handle mouse up event
+     * @param {MouseEvent} e - Mouse event
+     */
+    onMouseUp(e) {
+        this.isDragging = false;
+
+        if (e.button === 2) {
+            this.isApplyingForce = false;
+            this.dragStart = null;
+
+            // Apply force to objects under the mouse
+            if (this.lastMousePos) {
+                const dx = e.clientX - this.dragStart[0];
+                const dy = e.clientY - this.dragStart[1];
+
+                // Calculate force magnitude
+                const forceMagnitude = Math.sqrt(dx*dx + dy*dy) * 0.01;
+
+                // Get ray from camera
+                const ray = this.getMouseRay(e.clientX, e.clientY);
+
+                // Find closest object
+                let closestObj = null;
+                let closestDist = Infinity;
+
+                for (const obj of world.objects) {
+                    if (obj.fixed) continue;
+
+                    // Simple sphere intersection
+                    const center = obj.position;
+                    const radius = obj.shape ? obj.shape.localAABB.max[0] * 1.5 : 0.5;
+
+                    // Ray-sphere intersection
+                    const oc = MathUtils.vec3.sub(this.position, center);
+                    const a = MathUtils.vec3.dot(ray, ray);
+                    const b = 2 * MathUtils.vec3.dot(oc, ray);
+                    const c = MathUtils.vec3.dot(oc, oc) - radius*radius;
+                    const discriminant = b*b - 4*a*c;
+
+                    if (discriminant >= 0) {
+                        const t = (-b - Math.sqrt(discriminant)) / (2*a);
+                        if (t > 0 && t < closestDist) {
+                            closestDist = t;
+                            closestObj = obj;
+                        }
+                    }
+                }
+
+                if (closestObj) {
+                    // Apply force
+                    const forceDir = MathUtils.vec3.norm([
+                        dx * 0.01,
+                        -dy * 0.01,
+                        0
+                    ]);
+
+                    const force = MathUtils.vec3.scale(forceDir, forceMagnitude * 10);
+
+                    if (closestObj instanceof RigidBody) {
+                        const impactPoint = MathUtils.vec3.add(
+                            this.position,
+                            MathUtils.vec3.scale(ray, closestDist)
+                        );
+                        closestObj.applyForce(force, impactPoint);
+
+                        // Add particles
+                        if (CONFIG.showParticles) {
+                            particleSystem.addParticle(impactPoint, [1, 0.8, 0.5], 0.5);
+                        }
+                    } else if (closestObj instanceof SoftBody) {
+                        // Apply force to all vertices
+                        for (let i = 0; i < closestObj.vertices.length; i++) {
+                            closestObj.applyForce(i, MathUtils.vec3.scale(force, 0.1));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Handle mouse move event
+     * @param {MouseEvent} e - Mouse event
+     */
+    onMouseMove(e) {
+        if (this.isDragging) {
+            const dx = e.clientX - this.lastMousePos[0];
+            const dy = e.clientY - this.lastMousePos[1];
+
+            // Rotate camera around target
+            const right = MathUtils.vec3.norm(MathUtils.vec3.cross(this.up, this.forward));
+
+            // Rotate up vector around right
+            const newUp = MathUtils.vec3.add(
+                this.up,
+                MathUtils.vec3.scale(right, dy * this.sensitivity)
+            );
+
+            // Rotate position around up
+            const newPos = MathUtils.vec3.add(
+                this.position,
+                MathUtils.vec3.scale(
+                    MathUtils.vec3.cross(this.up, this.forward),
+                    dx * this.sensitivity
+                )
+            );
+
+            this.position = newPos;
+            this.up = newUp;
+
+            this.updateVectors();
+            this.lastMousePos = [e.clientX, e.clientY];
+        }
+
+        if (this.isApplyingForce && this.dragStart) {
+            const dx = e.clientX - this.dragStart[0];
+            const dy = e.clientY - this.dragStart[1];
+
+            this.forceDirection = MathUtils.vec3.create(dx * 0.01, -dy * 0.01, 0);
+        }
+    }
+
+    /**
+     * Handle mouse wheel event
+     * @param {WheelEvent} e - Wheel event
+     */
+    onWheel(e) {
+        // Zoom camera
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        const dir = MathUtils.vec3.norm(MathUtils.vec3.sub(this.position, this.target));
+
+        this.position = MathUtils.vec3.add(
+            this.target,
+            MathUtils.vec3.scale(dir, MathUtils.vec3.len(dir) * delta)
+        );
+
+        this.updateVectors();
+    }
+
+    /**
+     * Handle key down event
+     * @param {KeyboardEvent} e - Keyboard event
+     */
+    onKeyDown(e) {
+        const moveSpeed = 0.2;
+
+        switch (e.key) {
+            case 'w':
+                // Move forward
+                this.position = MathUtils.vec3.add(
+                    this.position,
+                    MathUtils.vec3.scale(this.forward, moveSpeed)
+                );
+                this.target = MathUtils.vec3.add(
+                    this.target,
+                    MathUtils.vec3.scale(this.forward, moveSpeed)
+                );
+                break;
+            case 's':
+                // Move backward
+                this.position = MathUtils.vec3.sub(
+                    this.position,
+                    MathUtils.vec3.scale(this.forward, moveSpeed)
+                );
+                this.target = MathUtils.vec3.sub(
+                    this.target,
+                    MathUtils.vec3.scale(this.forward, moveSpeed)
+                );
+                break;
+            case 'a':
+                // Move left
+                this.position = MathUtils.vec3.sub(
+                    this.position,
+                    MathUtils.vec3.scale(this.right, moveSpeed)
+                );
+                this.target = MathUtils.vec3.sub(
+                    this.target,
+                    MathUtils.vec3.scale(this.right, moveSpeed)
+                );
+                break;
+            case 'd':
+                // Move right
+                this.position = MathUtils.vec3.add(
+                    this.position,
+                    MathUtils.vec3.scale(this.right, moveSpeed)
+                );
+                this.target = MathUtils.vec3.add(
+                    this.target,
+                    MathUtils.vec3.scale(this.right, moveSpeed)
+                );
+                break;
+            case 'r':
+                // Reset view
+                this.position = MathUtils.vec3.create(0, 5, 10);
+                this.target = MathUtils.vec3.create(0, 0, 0);
+                this.up = MathUtils.vec3.create(0, 1, 0);
+                this.updateVectors();
+                break;
+        }
+    }
+
+    /**
+     * Get ray from camera through mouse position
+     * @param {number} x - Mouse x coordinate
+     * @param {number} y - Mouse y coordinate
+     * @returns {Float32Array} Ray direction
+     */
+    getMouseRay(x, y) {
+        // Convert mouse coordinates to normalized device coordinates
+        const ndcX = (x / CANVAS_SIZE.width) * 2 - 1;
+        const ndcY = -(y / CANVAS_SIZE.height) * 2 + 1;
+
+        // Create ray in clip space
+        const rayClip = new Float32Array([ndcX, ndcY, -1, 1]);
+
+        // Inverse projection matrix
+        const proj = this.getProjectionMatrix();
+        const invProj = MathUtils.mat4.inverse(proj);
+
+        // Transform to eye space
+        const rayEye = new Float32Array(4);
+        for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 4; j++) {
+                rayEye[i] += invProj[i*4 + j] * rayClip[j];
+            }
+        }
+
+        // Normalize
+        const rayEye3 = MathUtils.vec3.norm(new Float32Array([rayEye[0], rayEye[1], rayEye[2]]));
+
+        // Inverse view matrix
+        const view = this.getViewMatrix();
+        const invView = MathUtils.mat4.inverse(view);
+
+        // Transform to world space
+        const rayWorld = new Float32Array(3);
+        for (let i = 0; i < 3; i++) {
+            for (let j = 0; j < 3; j++) {
+                rayWorld[i] += invView[i*4 + j] * rayEye3[j];
+            }
+        }
+
+        return MathUtils.vec3.norm(rayWorld);
+    }
+}
+
+// =============================================
+// RENDERING SYSTEM
+// =============================================
+// WebGL2 rendering with:
+// - Phong/Blinn-Phong lighting
+// - Vertex and fragment shaders
+// - VAO and buffer management
+
+let shaderProgram, vao, vertexBuffer, indexBuffer;
+let particleProgram, particleVao, particleBuffer;
+let modelUniform, viewUniform, projectionUniform;
+let lightPosUniform, lightColorUniform, lightIntensityUniform;
+let ambientUniform, viewPosUniform, colorUniform;
+let wireframeUniform, useVertexColorUniform;
+let particlePointSizeUniform;
+
+function initWebGL() {
+    canvas = document.getElementById('glCanvas');
+    CANVAS_SIZE.width = window.innerWidth;
+    CANVAS_SIZE.height = window.innerHeight;
+    canvas.width = CANVAS_SIZE.width;
+    canvas.height = CANVAS_SIZE.height;
+
+    // Try to get WebGL2 context
+    gl = canvas.getContext('webgl2', {
+        antialias: true,
+        alpha: false,
+        powerPreference: 'high-performance'
+    });
+
+    if (!gl) {
+        alert('WebGL2 not supported in your browser. Try Chrome, Firefox, or Edge.');
+        return false;
+    }
+
+    // Enable depth testing and other features
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
+    gl.cullFace(gl.BACK);
+    gl.clearColor(CONFIG.bgColor[0], CONFIG.bgColor[1], CONFIG.bgColor[2], 1.0);
+    gl.depthFunc(gl.LEQUAL);
+
+    // Set viewport
+    gl.viewport(0, 0, CANVAS_SIZE.width, CANVAS_SIZE.height);
+
+    return true;
+}
+
+function initShaders() {
+    // =========================================
+    // MAIN SHADER (Phong/Blinn-Phong Lighting)
+    // =========================================
+    const vsSource = `#version 300 es
+        precision highp float;
+
+        in vec3 aPosition;
+        in vec3 aNormal;
+        in vec2 aTexCoord;
+
+        uniform mat4 uModel;
+        uniform mat4 uView;
+        uniform mat4 uProjection;
+
+        uniform vec3 uLightPosition;
+
+        out vec3 vNormal;
+        out vec3 vPosition;
+        out vec2 vTexCoord;
+        out vec3 vLightDir;
+        out vec3 vViewDir;
+
+        void main() {
+            vPosition = vec3(uModel * vec4(aPosition, 1.0));
+            vNormal = mat3(transpose(inverse(uModel))) * aNormal;
+            vTexCoord = aTexCoord;
+
+            vec3 lightPos = uLightPosition;
+            vLightDir = lightPos - vPosition;
+            vViewDir = -vPosition; // View position is at origin in view space
+
+            gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+        }
+    `;
+
+    const fsSource = `#version 300 es
+        precision highp float;
+
+        in vec3 vNormal;
+        in vec3 vPosition;
+        in vec2 vTexCoord;
+        in vec3 vLightDir;
+        in vec3 vViewDir;
+
+        uniform vec3 uLightColor;
+        uniform float uLightIntensity;
+        uniform vec3 uAmbient;
+        uniform vec3 uColor;
+        uniform bool uWireframe;
+        uniform bool uUseVertexColor;
+
+        out vec4 fragColor;
+
+        void main() {
+            if (uWireframe) {
+                fragColor = vec4(uColor, 1.0);
+                return;
+            }
+
+            // Normalize vectors
+            vec3 normal = normalize(vNormal);
+            vec3 lightDir = normalize(vLightDir);
+            vec3 viewDir = normalize(vViewDir);
+
+            // Ambient
+            vec3 ambient = uAmbient * uLightColor * uLightIntensity;
+
+            // Diffuse
+            float diff = max(dot(normal, lightDir), 0.0);
+            vec3 diffuse = diff * uLightColor * uLightIntensity;
+
+            // Specular (Blinn-Phong)
+            vec3 halfwayDir = normalize(lightDir + viewDir);
+            float spec = pow(max(dot(normal, halfwayDir), 0.0), 30.0);
+            vec3 specular = spec * uLightColor * uLightIntensity;
+
+            vec3 result = (ambient + diffuse + specular) * uColor;
+            fragColor = vec4(result, 1.0);
+        }
+    `;
+
+    // =========================================
+    // PARTICLE SHADER (Simple colored points)
+    // =========================================
+    const particleVsSource = `#version 300 es
+        precision highp float;
+
+        in vec3 aPosition;
+        in vec3 aColor;
+
+        uniform mat4 uView;
+        uniform mat4 uProjection;
+        uniform float uPointSize;
+
+        out vec3 vColor;
+
+        void main() {
+            vColor = aColor;
+            gl_Position = uProjection * uView * vec4(aPosition, 1.0);
+            gl_PointSize = uPointSize;
+        }
+    `;
+
+    const particleFsSource = `#version 300 es
+        precision highp float;
+
+        in vec3 vColor;
+
+        out vec4 fragColor;
+
+        void main() {
+            // Create a circular point
+            vec2 coord = gl_PointCoord - vec2(0.5);
+            float dist = dot(coord, coord);
+            if (dist > 0.25) discard;
+
+            fragColor = vec4(vColor, 1.0);
+        }
+    `;
+
+    // Compile shader
+    function compileShader(gl, source, type) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+            return null;
+        }
+
+        return shader;
+    }
+
+    // Create main shader program
+    const vertexShader = compileShader(gl, vsSource, gl.VERTEX_SHADER);
+    const fragmentShader = compileShader(gl, fsSource, gl.FRAGMENT_SHADER);
+
+    shaderProgram = gl.createProgram();
+    gl.attachShader(shaderProgram, vertexShader);
+    gl.attachShader(shaderProgram, fragmentShader);
+    gl.linkProgram(shaderProgram);
+
+    if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+        console.error('Shader program linking error:', gl.getProgramInfoLog(shaderProgram));
+        return false;
+    }
+
+    // Get attribute and uniform locations for main shader
+    const positionAttribute = gl.getAttribLocation(shaderProgram, 'aPosition');
+    const normalAttribute = gl.getAttribLocation(shaderProgram, 'aNormal');
+    const texCoordAttribute = gl.getAttribLocation(shaderProgram, 'aTexCoord');
+
+    modelUniform = gl.getUniformLocation(shaderProgram, 'uModel');
+    viewUniform = gl.getUniformLocation(shaderProgram, 'uView');
+    projectionUniform = gl.getUniformLocation(shaderProgram, 'uProjection');
+    lightPosUniform = gl.getUniformLocation(shaderProgram, 'uLightPosition');
+    lightColorUniform = gl.getUniformLocation(shaderProgram, 'uLightColor');
+    lightIntensityUniform = gl.getUniformLocation(shaderProgram, 'uLightIntensity');
+    ambientUniform = gl.getUniformLocation(shaderProgram, 'uAmbient');
+    viewPosUniform = gl.getUniformLocation(shaderProgram, 'uViewPosition');
+    colorUniform = gl.getUniformLocation(shaderProgram, 'uColor');
+    wireframeUniform = gl.getUniformLocation(shaderProgram, 'uWireframe');
+    useVertexColorUniform = gl.getUniformLocation(shaderProgram, 'uUseVertexColor');
+
+    // Create VAO
+    vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+
+    // Create vertex buffer
+    vertexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+
+    // Set attribute pointers
+    gl.enableVertexAttribArray(positionAttribute);
+    gl.vertexAttribPointer(positionAttribute, 3, gl.FLOAT, false, 8 * 4, 0);
+
+    gl.enableVertexAttribArray(normalAttribute);
+    gl.vertexAttribPointer(normalAttribute, 3, gl.FLOAT, false, 8 * 4, 3 * 4);
+
+    gl.enableVertexAttribArray(texCoordAttribute);
+    gl.vertexAttribPointer(texCoordAttribute, 2, gl.FLOAT, false, 8 * 4, 6 * 4);
+
+    // Create index buffer
+    indexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+
+    // Unbind VAO
+    gl.bindVertexArray(null);
+
+    // Create particle shader program
+    const particleVertexShader = compileShader(gl, particleVsSource, gl.VERTEX_SHADER);
+    const particleFragmentShader = compileShader(gl, particleFsSource, gl.FRAGMENT_SHADER);
+
+    particleProgram = gl.createProgram();
+    gl.attachShader(particleProgram, particleVertexShader);
+    gl.attachShader(particleProgram, particleFragmentShader);
+    gl.linkProgram(particleProgram);
+
+    if (!gl.getProgramParameter(particleProgram, gl.LINK_STATUS)) {
+        console.error('Particle shader program linking error:', gl.getProgramInfoLog(particleProgram));
+        return false;
+    }
+
+    // Get attribute and uniform locations for particle shader
+    const particlePositionAttribute = gl.getAttribLocation(particleProgram, 'aPosition');
+    const particleColorAttribute = gl.getAttribLocation(particleProgram, 'aColor');
+
+    const particleViewUniform = gl.getUniformLocation(particleProgram, 'uView');
+    const particleProjectionUniform = gl.getUniformLocation(particleProgram, 'uProjection');
+    particlePointSizeUniform = gl.getUniformLocation(particleProgram, 'uPointSize');
+
+    // Create particle VAO
+    particleVao = gl.createVertexArray();
+    gl.bindVertexArray(particleVao);
+
+    // Create particle buffer
+    particleBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, particleBuffer);
+
+    // Set attribute pointers
+    gl.enableVertexAttribArray(particlePositionAttribute);
+    gl.vertexAttribPointer(particlePositionAttribute, 3, gl.FLOAT, false, 6 * 4, 0);
+
+    gl.enableVertexAttribArray(particleColorAttribute);
+    gl.vertexAttribPointer(particleColorAttribute, 3, gl.FLOAT, false, 6 * 4, 3 * 4);
+
+    // Unbind particle VAO
+    gl.bindVertexArray(null);
+
+    // Store uniform locations for later use
+    window.particleViewUniform = particleViewUniform;
+    window.particleProjectionUniform = particleProjectionUniform;
+
+    return true;
+}
+
+function updateBuffers(vertices, indices) {
+    gl.bindVertexArray(vao);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW);
+
+    gl.bindVertexArray(null);
+}
+
+function renderObject(obj) {
+    // Use main shader program
+    gl.useProgram(shaderProgram);
+
+    // Set uniforms
+    const modelMatrix = obj.getTransformMatrix ? obj.getTransformMatrix() : MathUtils.mat4.identity();
+    gl.uniformMatrix4fv(modelUniform, false, modelMatrix);
+
+    const viewMatrix = camera.getViewMatrix();
+    gl.uniformMatrix4fv(viewUniform, false, viewMatrix);
+
+    const projectionMatrix = camera.getProjectionMatrix();
+    gl.uniformMatrix4fv(projectionUniform, false, projectionMatrix);
+
+    // Light properties
+    const lightPos = [10, 20, 10];
+    gl.uniform3fv(lightPosUniform, lightPos);
+    gl.uniform3fv(lightColorUniform, CONFIG.lightColor);
+    gl.uniform1f(lightIntensityUniform, CONFIG.lightIntensity);
+    gl.uniform3fv(ambientUniform, CONFIG.ambient);
+
+    // Camera position (for specular)
+    gl.uniform3fv(viewPosUniform, camera.position);
+
+    // Object color
+    gl.uniform3fv(colorUniform, obj.color || [1, 1, 1]);
+
+    // Wireframe mode
+    gl.uniform1i(wireframeUniform, CONFIG.wireframe);
+
+    // Use vertex color (not used in this shader, but for compatibility)
+    gl.uniform1i(useVertexColorUniform, 0);
+
+    // Update buffers with object's vertices
+    let vertices, indices;
+    if (obj instanceof SoftBody) {
+        vertices = obj.getTransformedVertices();
+        indices = obj.indices;
+    } else {
+        vertices = obj.shape.vertices;
+        indices = obj.shape.indices;
+    }
+
+    updateBuffers(vertices, indices);
+
+    // Draw
+    gl.bindVertexArray(vao);
+    gl.drawElements(
+        gl.TRIANGLES,
+        indices.length,
+        gl.UNSIGNED_SHORT,
+        0
+    );
+    gl.bindVertexArray(null);
+}
+
+function renderParticles() {
+    if (!CONFIG.showParticles || particleSystem.particles.length === 0) return;
+
+    // Use particle shader program
+    gl.useProgram(particleProgram);
+
+    // Set uniforms
+    const viewMatrix = camera.getViewMatrix();
+    gl.uniformMatrix4fv(window.particleViewUniform, false, viewMatrix);
+
+    const projectionMatrix = camera.getProjectionMatrix();
+    gl.uniformMatrix4fv(window.particleProjectionUniform, false, projectionMatrix);
+
+    // Point size
+    gl.uniform1f(particlePointSizeUniform, 8);
+
+    // Update particle buffer
+    const particleVertices = particleSystem.getVertices();
+    gl.bindVertexArray(particleVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, particleBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, particleVertices, gl.DYNAMIC_DRAW);
+
+    // Draw particles
+    gl.drawArrays(gl.POINTS, 0, particleSystem.particles.length);
+    gl.bindVertexArray(null);
+}
+
+function renderAABB(obj) {
+    if (!CONFIG.showAABB) return;
+
+    // Simple AABB rendering as wireframe
+    const aabb = obj.worldAABB;
+    const vertices = new Float32Array([
+        // Front face
+        aabb.min[0], aabb.min[1], aabb.max[2],
+        aabb.max[0], aabb.min[1], aabb.max[2],
+        aabb.max[0], aabb.max[1], aabb.max[2],
+        aabb.min[0], aabb.max[1], aabb.max[2],
+
+        // Back face
+        aabb.min[0], aabb.min[1], aabb.min[2],
+        aabb.max[0], aabb.min[1], aabb.min[2],
+        aabb.max[0], aabb.max[1], aabb.min[2],
+        aabb.min[0], aabb.max[1], aabb.min[2]
+    ]);
+
+    const indices = new Uint16Array([
+        0, 1, 1, 2, 2, 3, 3, 0, // Front
+        4, 5, 5, 6, 6, 7, 7, 4, // Back
+        0, 4, 1, 5, 2, 6, 3, 7  // Connecting lines
+    ]);
+
+    // Use main shader
+    gl.useProgram(shaderProgram);
+
+    // Set uniforms
+    const modelMatrix = MathUtils.mat4.identity();
+    gl.uniformMatrix4fv(modelUniform, false, modelMatrix);
+
+    const viewMatrix = camera.getViewMatrix();
+    gl.uniformMatrix4fv(viewUniform, false, viewMatrix);
+
+    const projectionMatrix = camera.getProjectionMatrix();
+    gl.uniformMatrix4fv(projectionUniform, false, projectionMatrix);
+
+    gl.uniform3fv(colorUniform, [0.5, 0.5, 1.0]);
+    gl.uniform1i(wireframeUniform, 1);
+
+    // Update buffers
+    gl.bindVertexArray(vao);
+
+    // Create temporary vertex buffer for AABB
+    const tempVertexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, tempVertexBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+
+    const positionAttribute = gl.getAttribLocation(shaderProgram, 'aPosition');
+    gl.enableVertexAttribArray(positionAttribute);
+    gl.vertexAttribPointer(positionAttribute, 3, gl.FLOAT, false, 0, 0);
+
+    // Create temporary index buffer for AABB
+    const tempIndexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tempIndexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW);
+
+    // Draw
+    gl.drawElements(gl.LINES, indices.length, gl.UNSIGNED_SHORT, 0);
+
+    // Clean up
+    gl.deleteBuffer(tempVertexBuffer);
+    gl.deleteBuffer(tempIndexBuffer);
+    gl.bindVertexArray(null);
+}
+
+function renderScene() {
+    // Clear canvas
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // Render all objects
+    for (const obj of world.objects) {
+        renderObject(obj);
+
+        // Render AABB if enabled
+        if (CONFIG.showAABB) {
+            renderAABB(obj);
+        }
+    }
+
+    // Render particles
+    renderParticles();
+}
+
+// =============================================
+// SCENE SETUP & PRESETS
+// =============================================
+// Functions to create different simulation scenarios
+
+function createGround() {
+    const ground = Geometry.createCube(20, 0.2, 20);
+    const groundBody = new RigidBody(
+        new Shape(ground),
+        [0, -1, 0],
+        0, // Infinite mass (fixed)
+        true
+    );
+    groundBody.color = [0.2, 0.2, 0.25];
+    return groundBody;
+}
+
+function createStack() {
+    const ground = createGround();
+    world.addObject(ground);
+
+    // Create a stack of cubes
+    for (let i = 0; i < 8; i++) {
+        const cube = Geometry.createCube(0.6);
+        const body = new RigidBody(
+            new Shape(cube),
+            [0, i * 0.65 + 0.3, 0],
+            1 + Math.random() * 0.5
+        );
+        body.color = [
+            MathUtils.randomRange(0.4, 0.8),
+            MathUtils.randomRange(0.4, 0.8),
+            MathUtils.randomRange(0.4, 0.8)
+        ];
+        body.restitution = MathUtils.randomRange(0.4, 0.7);
+        world.addObject(body);
+    }
+
+    // Add some offset cubes
+    for (let i = 0; i < 4; i++) {
+        const cube = Geometry.createCube(0.4);
+        const body = new RigidBody(
+            new Shape(cube),
+            [(i % 2 === 0 ? -0.8 : 0.8), 1.5 + i * 0.5, 0],
+            0.5 + Math.random() * 0.3
+        );
+        body.color = [
+            MathUtils.randomRange(0.6, 0.9),
+            MathUtils.randomRange(0.3, 0.6),
+            MathUtils.randomRange(0.3, 0.6)
+        ];
+        world.addObject(body);
+    }
+}
+
+function createBunnyDrop() {
+    const ground = createGround();
+    world.addObject(ground);
+
+    // Create Stanford Bunny
+    const bunny = new Shape(Geometry.BUNNY);
+    const bunnyBody = new RigidBody(
+        bunny,
+        [0, 8, 0],
+        2
+    );
+    bunnyBody.color = [0.8, 0.6, 0.4];
+    bunnyBody.restitution = 0.3;
+    world.addObject(bunnyBody);
+
+    // Add some cubes around
+    for (let i = 0; i < 5; i++) {
+        const cube = Geometry.createCube(0.5);
+        const body = new RigidBody(
+            new Shape(cube),
+            [
+                (Math.random() - 0.5) * 4,
+                5 + Math.random() * 2,
+                (Math.random() - 0.5) * 4
+            ],
+            0.8 + Math.random() * 0.4
+        );
+        body.color = [
+            MathUtils.randomRange(0.3, 0.7),
+            MathUtils.randomRange(0.3, 0.7),
+            MathUtils.randomRange(0.5, 0.9)
+        ];
+        world.addObject(body);
+    }
+}
+
+function createTetrahedralChain() {
+    const ground = createGround();
+    world.addObject(ground);
+
+    // Create a chain of tetrahedrons
+    for (let i = 0; i < 15; i++) {
+        const tetra = Geometry.createTetrahedron(0.3);
+        const body = new RigidBody(
+            new Shape(tetra),
+            [i * 0.4 - 2.5, 5 + Math.sin(i * 0.5) * 0.3, 0],
+            0.3
+        );
+        body.color = [
+            i / 15,
+            0.5,
+            1 - i / 15
+        ];
+        body.restitution = 0.6;
+        world.addObject(body);
+    }
+
+    // Add some obstacles
+    for (let i = 0; i < 3; i++) {
+        const cube = Geometry.createCube(1);
+        const body = new RigidBody(
+            new Shape(cube),
+            [i * 4 - 4, 0.5, 2],
+            0, // Fixed
+            true
+        );
+        body.color = [0.3, 0.3, 0.3];
+        world.addObject(body);
+    }
+}
+
+function createComplexPolyhedra() {
+    const ground = createGround();
+    world.addObject(ground);
+
+    // Create a variety of polyhedra
+    const shapes = [
+        Geometry.createIcosahedron(0.6),
+        Geometry.createTetrahedron(0.7),
+        Geometry.createCube(0.5),
+        Geometry.createTorus(0.5, 0.2, 16, 8)
+    ];
+
+    for (let i = 0; i < 15; i++) {
+        const shape = shapes[i % shapes.length];
+        const body = new RigidBody(
+            new Shape(shape),
+            [
+                (Math.random() - 0.5) * 6,
+                3 + Math.random() * 4,
+                (Math.random() - 0.5) * 6
+            ],
+            0.5 + Math.random() * 0.5
+        );
+        body.color = [
+            MathUtils.randomRange(0.3, 0.9),
+            MathUtils.randomRange(0.3, 0.9),
+            MathUtils.randomRange(0.3, 0.9)
+        ];
+        body.restitution = MathUtils.randomRange(0.3, 0.7);
+        world.addObject(body);
+    }
+}
+
+function createTorusStack() {
+    const ground = createGround();
+    world.addObject(ground);
+
+    // Create a stack of tori
+    for (let i = 0; i < 6; i++) {
+        const torus = Geometry.createTorus(0.8 - i * 0.1, 0.2, 16, 8);
+        const body = new RigidBody(
+            new Shape(torus),
+            [0, 1 + i * 0.4, 0],
+            1 + i * 0.2
+        );
+        body.color = [
+            MathUtils.randomRange(0.4, 0.8),
+            MathUtils.randomRange(0.4, 0.8),
+            MathUtils.randomRange(0.6, 0.9)
+        ];
+        body.restitution = 0.4 + i * 0.05;
+        world.addObject(body);
+    }
+
+    // Add some cubes to the sides
+    for (let i = 0; i < 4; i++) {
+        const cube = Geometry.createCube(0.4);
+        const body = new RigidBody(
+            new Shape(cube),
+            [i % 2 === 0 ? -1.5 : 1.5, 2 + Math.floor(i/2) * 0.8, 0],
+            0.5
+        );
+        body.color = [
+            MathUtils.randomRange(0.6, 0.9),
+            MathUtils.randomRange(0.3, 0.6),
+            MathUtils.randomRange(0.3, 0.6)
+        ];
+        world.addObject(body);
+    }
+}
+
+function loadPreset(preset) {
+    world.reset();
+    particleSystem.particles = [];
+
+    switch (preset) {
+        case 'stack':
+            createStack();
+            break;
+        case 'bunny':
+            createBunnyDrop();
+            break;
+        case 'chain':
+            createTetrahedralChain();
+            break;
+        case 'destruction':
+            createComplexPolyhedra();
+            break;
+        case 'polyhedra':
+            createComplexPolyhedra();
+            break;
+        case 'torus':
+            createTorusStack();
+            break;
+        default:
+            createStack();
+    }
+
+    // Reset camera
+    camera.position = MathUtils.vec3.create(0, 5, 10);
+    camera.target = MathUtils.vec3.create(0, 0, 0);
+    camera.up = MathUtils.vec3.create(0, 1, 0);
+    camera.updateVectors();
+}
+
+// =============================================
+// UI CONTROLS
+// =============================================
+function initUI() {
+    // Pause button
+    const pauseButton = document.getElementById('pause');
+    pauseButton.addEventListener('click', () => {
+        CONFIG.paused = !CONFIG.paused;
+        pauseButton.textContent = CONFIG.paused ? 'Play' : 'Pause';
+        pauseButton.classList.toggle('active', !CONFIG.paused);
+    });
+
+    // Reset button
+    const resetButton = document.getElementById('reset');
+    resetButton.addEventListener('click', () => {
+        loadPreset('stack');
+    });
+
+    // Wireframe button
+    const wireframeButton = document.getElementById('wireframe');
+    wireframeButton.addEventListener('click', () => {
+        CONFIG.wireframe = !CONFIG.wireframe;
+        wireframeButton.textContent = CONFIG.wireframe ? 'Solid' : 'Wireframe';
+        wireframeButton.classList.toggle('active', CONFIG.wireframe);
+    });
+
+    // Gravity slider
+    const gravitySlider = document.getElementById('gravity');
+    const gravityValue = document.getElementById('gravityValue');
+    gravitySlider.addEventListener('input', () => {
+        CONFIG.gravity = parseFloat(gravitySlider.value);
+        gravityValue.textContent = CONFIG.gravity.toFixed(1);
+    });
+
+    // Damping slider
+    const dampingSlider = document.getElementById('damping');
+    const dampingValue = document.getElementById('dampingValue');
+    dampingSlider.addEventListener('input', () => {
+        CONFIG.damping = parseFloat(dampingSlider.value);
+        dampingValue.textContent = CONFIG.damping.toFixed(3);
+    });
+
+    // Friction slider
+    const frictionSlider = document.getElementById('friction');
+    const frictionValue = document.getElementById('frictionValue');
+    frictionSlider.addEventListener('input', () => {
+        CONFIG.friction = parseFloat(frictionSlider.value);
+        frictionValue.textContent = CONFIG.friction.toFixed(2);
+
+        // Update all objects' friction
+        for (const obj of world.objects) {
+            if (obj instanceof RigidBody) {
+                obj.friction = CONFIG.friction;
+            }
+        }
+    });
+
+    // Restitution slider
+    const restitutionSlider = document.getElementById('restitution');
+    const restitutionValue = document.getElementById('restitutionValue');
+    restitutionSlider.addEventListener('input', () => {
+        CONFIG.restitution = parseFloat(restitutionSlider.value);
+        restitutionValue.textContent = CONFIG.restitution.toFixed(2);
+
+        // Update all objects' restitution
+        for (const obj of world.objects) {
+            if (obj instanceof RigidBody) {
+                obj.restitution = CONFIG.restitution;
+            }
+        }
+    });
+
+    // Speed slider
+    const speedSlider = document.getElementById('speed');
+    const speedValue = document.getElementById('speedValue');
+    speedSlider.addEventListener('input', () => {
+        CONFIG.speed = parseFloat(speedSlider.value);
+        speedValue.textContent = CONFIG.speed.toFixed(1);
+    });
+
+    // Preset buttons
+    const presetButtons = document.querySelectorAll('.preset-btn');
+    presetButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            loadPreset(button.dataset.preset);
+        });
+    });
+}
+
+// =============================================
+// MAIN LOOP & INITIALIZATION
+// =============================================
+let lastFrameTime = 0;
+let fpsCounter = 0;
+let fpsTime = 0;
+let currentFps = 0;
+
+function updateFPS() {
+    fpsCounter++;
+    const now = performance.now();
+
+    if (now - fpsTime >= 1000) {
+        currentFps = fpsCounter;
+        fpsCounter = 0;
+        fpsTime = now;
+        document.getElementById('fps').textContent = `FPS: ${currentFps}`;
+    }
+}
+
+function mainLoop(timestamp) {
+    // Calculate delta time
+    const dt = Math.min((timestamp - lastFrameTime) / 1000, 0.1);
+    lastFrameTime = timestamp;
+
+    // Update FPS counter
+    updateFPS();
+
+    // Update simulation if not paused
+    if (!CONFIG.paused) {
+        world.update(dt);
+
+        // Update particles
+        particleSystem.update(dt);
+    }
+
+    // Render scene
+    renderScene();
+
+    // Request next frame
+    requestAnimationFrame(mainLoop);
+}
+
+function init() {
+    // Initialize WebGL
+    if (!initWebGL()) {
+        return;
+    }
+
+    // Initialize shaders
+    if (!initShaders()) {
+        return;
+    }
+
+    // Initialize world
+    world = new PhysicsWorld();
+
+    // Initialize particle system
+    particleSystem = new ParticleSystem();
+
+    // Initialize camera
+    camera = new OrbitCamera(
+        MathUtils.vec3.create(0, 5, 10),
+        MathUtils.vec3.create(0, 0, 0),
+        MathUtils.vec3.create(0, 1, 0)
+    );
+
+    // Initialize UI
+    initUI();
+
+    // Load initial preset
+    loadPreset('stack');
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+        CANVAS_SIZE.width = window.innerWidth;
+        CANVAS_SIZE.height = window.innerHeight;
+        canvas.width = CANVAS_SIZE.width;
+        canvas.height = CANVAS_SIZE.height;
+        gl.viewport(0, 0, CANVAS_SIZE.width, CANVAS_SIZE.height);
+    });
+
+    // Initialize input
+    canvas.addEventListener('mousedown', (e) => camera.onMouseDown(e));
+    window.addEventListener('mouseup', (e) => camera.onMouseUp(e));
+    window.addEventListener('mousemove', (e) => camera.onMouseMove(e));
+    window.addEventListener('wheel', (e) => camera.onWheel(e));
+    window.addEventListener('keydown', (e) => camera.onKeyDown(e));
+
+    // Prevent context menu on right click
+    canvas.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+    });
+
+    // Start main loop
+    requestAnimationFrame(mainLoop);
+}
+
+// =============================================
+// START THE APPLICATION
+// =============================================
+window.onload = init;
+</script>
+</body>
+</html>

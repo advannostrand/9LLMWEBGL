@@ -1,0 +1,1536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>POLYTOPE LAB — XPBD soft &amp; rigid body simulator</title>
+<style>
+/* ------------------------------------------------------------------ */
+/*  UI THEME — "instrument panel over deep space"                      */
+/*  Quiet glass chrome; the simulation itself is the hero.            */
+/* ------------------------------------------------------------------ */
+:root{
+  --bg:#06080f;
+  --panel:rgba(11,15,26,.82);
+  --line:rgba(125,165,255,.16);
+  --txt:#dfe7ff;
+  --dim:#8a94b8;
+  --acc:#5eead4;          /* teal — interactive accents              */
+  --acc2:#c084fc;         /* violet — secondary accent               */
+  --warn:#fca5a5;
+  --mono:'Cascadia Code','SF Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);
+  font:13px/1.45 'Avenir Next','Segoe UI',system-ui,sans-serif;color:var(--txt);
+  -webkit-user-select:none;user-select:none}
+canvas#c{position:fixed;inset:0;display:block;touch-action:none;cursor:grab}
+canvas#c.grabbing{cursor:grabbing}
+
+/* control panel ----------------------------------------------------- */
+#ui{position:fixed;top:14px;left:14px;width:252px;background:var(--panel);
+  border:1px solid var(--line);border-radius:14px;padding:13px 15px 15px;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 10px 40px rgba(0,0,0,.45);transition:transform .25s ease,opacity .25s ease}
+#ui.hidden{transform:translateX(-110%);opacity:0;pointer-events:none}
+#ui h1{margin:0 0 2px;font:600 13px/1 var(--mono);letter-spacing:.22em;color:var(--acc)}
+#ui h1 svg{vertical-align:-3px;margin-right:7px}
+#ui .sub{font-size:10.5px;color:var(--dim);letter-spacing:.08em;margin-bottom:11px}
+.group{font-size:10px;letter-spacing:.2em;color:var(--dim);margin:11px 0 6px;text-transform:uppercase}
+#presets{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+#presets button{padding:7px 4px;font-size:11px;line-height:1.25;border-radius:9px;
+  border:1px solid var(--line);background:rgba(125,165,255,.05);color:var(--txt);cursor:pointer}
+#presets button:hover{border-color:var(--acc);color:var(--acc)}
+#presets button.on{background:rgba(94,234,212,.13);border-color:var(--acc);color:var(--acc)}
+.btnrow{display:flex;gap:6px;margin-top:9px}
+.btnrow button{flex:1;padding:6px 0;border-radius:9px;border:1px solid var(--line);
+  background:rgba(125,165,255,.05);color:var(--txt);cursor:pointer;font-size:11.5px}
+.btnrow button:hover{border-color:var(--acc2);color:var(--acc2)}
+.btnrow button.on{background:rgba(192,132,252,.14);border-color:var(--acc2);color:var(--acc2)}
+.srow{margin:7px 0 0}
+.srow .lab{display:flex;justify-content:space-between;font-size:11px;color:var(--dim)}
+.srow .lab b{font:600 11px var(--mono);color:var(--txt)}
+.srow input[type=range]{width:100%;height:18px;margin:1px 0 0;accent-color:var(--acc);cursor:ew-resize;background:transparent}
+
+/* HUD / readouts ----------------------------------------------------- */
+#hud{position:fixed;top:14px;right:14px;text-align:right;font:11px var(--mono);
+  color:var(--dim);background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:9px 13px;backdrop-filter:blur(14px);pointer-events:none}
+#hud .fps{font-size:21px;color:var(--acc);line-height:1.05}
+#hud .fps i{font-style:normal;font-size:10px;color:var(--dim)}
+#help{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);max-width:94vw;
+  font:10.5px var(--mono);letter-spacing:.04em;color:var(--dim);background:var(--panel);
+  border:1px solid var(--line);border-radius:99px;padding:6px 16px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+#help b{color:var(--acc);font-weight:600}
+#toast{position:fixed;left:50%;top:18%;transform:translateX(-50%);font:600 15px var(--mono);
+  letter-spacing:.3em;color:var(--acc);text-shadow:0 0 22px rgba(94,234,212,.55);
+  opacity:0;pointer-events:none;transition:opacity .5s}
+#hidebtn{position:fixed;top:22px;left:280px;width:26px;height:26px;border-radius:8px;
+  border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer;
+  font:12px var(--mono);transition:left .25s ease}
+#hidebtn.shifted{left:14px}
+#err{position:fixed;inset:0;display:none;place-items:center;background:var(--bg);
+  color:var(--warn);font:14px var(--mono);text-align:center;padding:30px}
+@media(max-width:640px){#ui{width:218px}#hidebtn{left:246px}#help{display:none}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <h1><svg width="15" height="14" viewBox="0 0 20 18" fill="none"><path d="M10 1 L19 16 L1 16 Z M10 1 L10 16 M10 1 L1 16 M10 1 L19 16 M4 11 L16 11" stroke="#5eead4" stroke-width="1.4" stroke-linejoin="round"/></svg>POLYTOPE LAB</h1>
+  <div class="sub">XPBD · tetrahedral soft bodies · rigid shape matching</div>
+  <div class="group">Experiments</div>
+  <div id="presets"></div>
+  <div class="btnrow">
+    <button id="btnPlay" title="space">⏸ pause</button>
+    <button id="btnReset" title="R">↻ reset</button>
+    <button id="btnWire" title="W">◇ wire</button>
+  </div>
+  <div class="group">Parameters</div>
+  <div id="sliders"></div>
+</div>
+<button id="hidebtn" title="toggle panel (H)">⟨</button>
+
+<div id="hud">
+  <div class="fps"><span id="fps">--</span><i> fps</i></div>
+  <div id="stats">—</div>
+</div>
+<div id="help"><b>drag a body</b> grab &amp; fling · <b>drag space</b> orbit · <b>wheel</b> zoom · <b>rmb</b> pan · <b>space</b> pause · <b>1–4</b> presets</div>
+<div id="toast"></div>
+<div id="err">WebGL2 is not available in this browser.<br>Try a recent Chrome / Firefox / Safari.</div>
+
+<script>
+"use strict";
+/* ====================================================================
+   POLYTOPE LAB — a self-contained real-time physics laboratory
+   --------------------------------------------------------------------
+   PHYSICS  : XPBD (extended position-based dynamics, Macklin et al.)
+              run with many small substeps ("Small Steps" scheme).
+              · soft bodies  = tetrahedral meshes with distance +
+                volume-conservation constraints (FEM-flavoured)
+              · rigid bodies = particle clusters kept rigid with
+                shape matching (Müller's robust rotation extraction)
+              · contacts     = particle vs. ground plane and particle
+                vs. particle via a uniform spatial hash, with
+                position-level Coulomb friction and a velocity-level
+                restitution pass
+              · destruction  = breakable rigid bodies that shatter
+                into their tetrahedral shards above an impact speed
+   GEOMETRY : complex meshes are generated procedurally —
+              · signed-distance fields voxelised into a conforming
+                Kuhn (6-tet-per-cube) tetrahedral lattice (the bunny)
+              · exact polyhedra (icosahedra / dodecahedra) fanned
+                into tetrahedra from their centroid
+              boundary triangles are extracted by face counting.
+   RENDERING: raw WebGL2 — Blinn-Phong + hemispheric ambient + rim,
+              2048² PCF shadow map, procedural grid floor, gradient
+              sky, additive impact sparks, optional wireframe.
+   ==================================================================== */
+
+/* ================== SECTION 0 · tiny utilities ===================== */
+const $=id=>document.getElementById(id);
+const clamp=(x,a,b)=>x<a?a:(x>b?b:x);
+let _seed=1; const srand=s=>{_seed=s>>>0||1;};
+const rnd=()=>{ _seed=(_seed*1664525+1013904223)>>>0; return _seed/4294967296; }; // deterministic per preset
+const rndR=(a,b)=>a+(b-a)*rnd();
+
+/* ================== SECTION 1 · math (vec / mat4 / quat) =========== */
+function m4Persp(o,fov,asp,n,f){const t=1/Math.tan(fov/2);o.fill(0);
+  o[0]=t/asp;o[5]=t;o[10]=(f+n)/(n-f);o[11]=-1;o[14]=2*f*n/(n-f);return o;}
+function m4Ortho(o,l,r,b,t,n,f){o.fill(0);o[0]=2/(r-l);o[5]=2/(t-b);o[10]=-2/(f-n);
+  o[12]=-(r+l)/(r-l);o[13]=-(t+b)/(t-b);o[14]=-(f+n)/(f-n);o[15]=1;return o;}
+function m4LookAt(o,ex,ey,ez,cx,cy,cz,ux,uy,uz){
+  let zx=ex-cx,zy=ey-cy,zz=ez-cz,zl=1/Math.hypot(zx,zy,zz);zx*=zl;zy*=zl;zz*=zl;
+  let xx=uy*zz-uz*zy,xy=uz*zx-ux*zz,xz=ux*zy-uy*zx,xl=1/Math.hypot(xx,xy,xz);xx*=xl;xy*=xl;xz*=xl;
+  const yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;
+  o[0]=xx;o[1]=yx;o[2]=zx;o[3]=0;o[4]=xy;o[5]=yy;o[6]=zy;o[7]=0;
+  o[8]=xz;o[9]=yz;o[10]=zz;o[11]=0;
+  o[12]=-(xx*ex+xy*ey+xz*ez);o[13]=-(yx*ex+yy*ey+yz*ez);o[14]=-(zx*ex+zy*ey+zz*ez);o[15]=1;return o;}
+function m4Mul(o,a,b){const r=new Float32Array(16);
+  for(let c=0;c<4;c++)for(let i=0;i<4;i++)
+    r[c*4+i]=a[i]*b[c*4]+a[4+i]*b[c*4+1]+a[8+i]*b[c*4+2]+a[12+i]*b[c*4+3];
+  o.set(r);return o;}
+/* quaternion [x,y,z,w] → column-major 3×3 rotation matrix */
+function quatToMat3(q,m){const x=q[0],y=q[1],z=q[2],w=q[3];
+  m[0]=1-2*(y*y+z*z);m[1]=2*(x*y+w*z);m[2]=2*(x*z-w*y);
+  m[3]=2*(x*y-w*z);m[4]=1-2*(x*x+z*z);m[5]=2*(y*z+w*x);
+  m[6]=2*(x*z+w*y);m[7]=2*(y*z-w*x);m[8]=1-2*(x*x+y*y);return m;}
+function quatMul(a,b,o){ // o = a ⊗ b
+  const x=a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],
+        y=a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],
+        z=a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],
+        w=a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2];
+  o[0]=x;o[1]=y;o[2]=z;o[3]=w;return o;}
+function quatAxisAngle(ax,ay,az,ang,o){const s=Math.sin(ang/2);
+  o[0]=ax*s;o[1]=ay*s;o[2]=az*s;o[3]=Math.cos(ang/2);return o;}
+function quatNorm(q){const l=1/Math.hypot(q[0],q[1],q[2],q[3]);
+  q[0]*=l;q[1]*=l;q[2]*=l;q[3]*=l;}
+
+/* Müller 2016 — "A robust method to extract the rotational part of
+   deformations". Iteratively rotates quaternion q toward the rotation
+   that best matches the (possibly sheared) 3×3 matrix A. Warm-started
+   with the previous frame's q, ~10 iterations are plenty.            */
+const _R9=new Float32Array(9), _dq=new Float32Array(4);
+function extractRotation(A,q,iters){
+  for(let it=0;it<iters;it++){
+    const R=quatToMat3(q,_R9);
+    let ox=0,oy=0,oz=0,d=0;
+    for(let c=0;c<3;c++){
+      const rx=R[c*3],ry=R[c*3+1],rz=R[c*3+2];
+      const ax=A[c*3],ay=A[c*3+1],az=A[c*3+2];
+      ox+=ry*az-rz*ay; oy+=rz*ax-rx*az; oz+=rx*ay-ry*ax;   // Σ r×a
+      d +=rx*ax+ry*ay+rz*az;                               // Σ r·a
+    }
+    const inv=1/(Math.abs(d)+1e-9); ox*=inv;oy*=inv;oz*=inv;
+    const w=Math.hypot(ox,oy,oz);
+    if(w<1e-9)break;
+    quatAxisAngle(ox/w,oy/w,oz/w,w,_dq);
+    quatMul(_dq,q,q); quatNorm(q);
+  }
+  return quatToMat3(q,_R9);
+}
+
+/* ================== SECTION 2 · WebGL boot ========================= */
+const canvas=$('c');
+const gl=canvas.getContext('webgl2',{antialias:true,alpha:false,powerPreference:'high-performance'});
+if(!gl){$('err').style.display='grid';throw new Error('no webgl2');}
+
+function compile(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s)+'\n'+src);
+  return s;}
+function program(vs,fs,binds){const p=gl.createProgram();
+  gl.attachShader(p,compile(gl.VERTEX_SHADER,vs));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs));
+  if(binds)for(const[i,n]of binds)gl.bindAttribLocation(p,i,n);
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));
+  p.u={};const n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){const u=gl.getActiveUniform(p,i);p.u[u.name.replace('[0]','')]=gl.getUniformLocation(p,u.name);}
+  return p;}
+
+/* ================== SECTION 3 · shaders ============================ */
+/* ---- main body shader: Blinn-Phong + hemispheric ambient + rim +
+        2048² PCF shadows. uWire>0.5 draws darkened edge lines that are
+        nudged toward the camera in clip space to avoid z-fighting. --- */
+const MESH_VS=`#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNrm;
+layout(location=2) in vec3 aCol;
+uniform mat4 uProj,uView,uLightVP;
+uniform float uWire;
+out vec3 vN; out vec3 vW; out vec3 vC; out vec4 vS;
+void main(){
+  vN=aNrm; vW=aPos; vC=aCol;
+  vS=uLightVP*vec4(aPos,1.0);                 // shadow-map coordinates
+  vec4 cp=uProj*uView*vec4(aPos,1.0);
+  if(uWire>0.5) cp.z-=0.0024*cp.w;            // depth bias for wire pass
+  gl_Position=cp;
+}`;
+const SHADOW_FN=`
+float shadowPCF(vec4 sc,float ndl){
+  vec3 p=sc.xyz/sc.w;
+  if(p.z>1.0||p.x<0.0||p.x>1.0||p.y<0.0||p.y>1.0) return 1.0;
+  float bias=clamp(0.0030*tan(acos(clamp(ndl,0.0,1.0))),0.0006,0.006);
+  p.z-=bias;
+  float s=0.0; float t=1.0/2048.0;
+  for(int x=-1;x<=1;x++)for(int y=-1;y<=1;y++)
+    s+=texture(uShadow,vec3(p.xy+vec2(x,y)*t,p.z));   // hardware compare
+  return s/9.0;
+}`;
+const MESH_FS=`#version 300 es
+precision highp float;
+in vec3 vN; in vec3 vW; in vec3 vC; in vec4 vS;
+uniform vec3 uEye,uLightDir;
+uniform highp sampler2DShadow uShadow;
+uniform float uWire;
+out vec4 frag;
+${SHADOW_FN}
+void main(){
+  if(uWire>0.5){ frag=vec4(vC*0.22+vec3(0.0,0.02,0.03),1.0); return; }
+  vec3 N=normalize(vN);
+  vec3 V=normalize(uEye-vW);
+  vec3 L=normalize(-uLightDir);
+  float ndl=max(dot(N,L),0.0);
+  float sh=shadowPCF(vS,ndl);
+  vec3 H=normalize(L+V);
+  float spec=pow(max(dot(N,H),0.0),52.0)*0.55;
+  vec3 amb=mix(vec3(0.050,0.045,0.085),vec3(0.20,0.235,0.33),N.y*0.5+0.5); // hemi
+  float rim=pow(1.0-max(dot(N,V),0.0),3.0)*0.28;
+  vec3 col=vC*(amb+vec3(1.0,0.95,0.88)*(ndl*sh*1.25))
+         + spec*sh*vec3(1.0,0.98,0.92)
+         + rim*vec3(0.35,0.70,1.0);
+  float fog=1.0-exp(-0.018*length(uEye-vW));
+  col=mix(col,vec3(0.040,0.045,0.085),clamp(fog,0.0,1.0));
+  frag=vec4(pow(col,vec3(0.4545)),1.0);       // gamma
+}`;
+/* ---- depth-only shadow pass ---- */
+const DEPTH_VS=`#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uMVP;
+void main(){gl_Position=uMVP*vec4(aPos,1.0);}`;
+const DEPTH_FS=`#version 300 es
+precision mediump float; out vec4 o; void main(){o=vec4(1.0);}`;
+/* ---- procedural grid floor, shadow-receiving ---- */
+const GROUND_VS=`#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uProj,uView,uLightVP;
+out vec3 vW; out vec4 vS;
+void main(){vW=aPos;vS=uLightVP*vec4(aPos,1.0);gl_Position=uProj*uView*vec4(aPos,1.0);}`;
+const GROUND_FS=`#version 300 es
+precision highp float;
+in vec3 vW; in vec4 vS;
+uniform vec3 uEye,uLightDir;
+uniform highp sampler2DShadow uShadow;
+out vec4 frag;
+${SHADOW_FN}
+void main(){
+  float sh=shadowPCF(vS,1.0);
+  vec2 q=vW.xz;                                    // 1 m grid
+  vec2 g=abs(fract(q-0.5)-0.5)/fwidth(q);
+  float l1=1.0-min(min(g.x,g.y),1.0);
+  vec2 q5=q*0.2;                                   // 5 m grid
+  g=abs(fract(q5-0.5)-0.5)/fwidth(q5);
+  float l5=1.0-min(min(g.x,g.y),1.0);
+  float r=length(q);
+  float glow=exp(-r*r*0.004);                      // soft pool of light at origin
+  vec3 col=vec3(0.026,0.030,0.054)+glow*vec3(0.012,0.020,0.034);
+  col+=vec3(0.04,0.13,0.17)*l1*0.40*exp(-r*0.05);
+  col+=vec3(0.07,0.26,0.34)*l5*0.65*exp(-r*0.03);
+  col*=0.34+0.66*sh;                               // shadows
+  float fog=1.0-exp(-0.018*length(uEye-vW));
+  col=mix(col,vec3(0.040,0.045,0.085),clamp(fog,0.0,1.0));
+  frag=vec4(pow(col,vec3(0.4545)),1.0);
+}`;
+/* ---- fullscreen gradient sky with faint stars ---- */
+const SKY_VS=`#version 300 es
+out vec2 vUV;
+void main(){
+  vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2))*2.0-1.0;
+  vUV=p*0.5+0.5; gl_Position=vec4(p,0.9999,1.0);
+}`;
+const SKY_FS=`#version 300 es
+precision highp float;
+in vec2 vUV; out vec4 frag;
+void main(){
+  vec3 top=vec3(0.018,0.020,0.046), mid=vec3(0.058,0.060,0.130), bot=vec3(0.085,0.052,0.118);
+  vec3 col=mix(mix(bot,mid,smoothstep(0.0,0.45,vUV.y)),top,smoothstep(0.45,1.0,vUV.y));
+  col+=exp(-pow((vUV.y-0.40)*5.5,2.0))*vec3(0.06,0.10,0.17);     // horizon glow
+  vec2 g=vUV*vec2(170.0,95.0); vec2 id=floor(g);
+  float h=fract(sin(dot(id,vec2(127.1,311.7)))*43758.5453);
+  float star=step(0.997,h)*smoothstep(0.42,0.05,length(fract(g)-0.5))*smoothstep(0.40,0.8,vUV.y);
+  col+=star*0.55*vec3(0.8,0.9,1.0);
+  frag=vec4(col,1.0);
+}`;
+/* ---- additive impact sparks (point sprites) ---- */
+const SPARK_VS=`#version 300 es
+layout(location=0) in vec3 aP;
+layout(location=1) in vec3 aC;
+layout(location=2) in float aL;
+uniform mat4 uProj,uView; uniform float uScale;
+out vec3 vC; out float vL;
+void main(){
+  vC=aC; vL=aL;
+  gl_Position=uProj*uView*vec4(aP,1.0);
+  gl_PointSize=clamp(uScale*(0.5+aL)/max(gl_Position.w,0.4),1.5,26.0);
+}`;
+const SPARK_FS=`#version 300 es
+precision mediump float;
+in vec3 vC; in float vL; out vec4 frag;
+void main(){
+  float r=length(gl_PointCoord-0.5)*2.0;
+  float a=max(1.0-r,0.0); a*=a;
+  frag=vec4(vC*(0.6+1.6*vL),1.0)*a*min(vL*1.6,1.0);
+}`;
+
+const progMesh  =program(MESH_VS,MESH_FS);
+const progDepth =program(DEPTH_VS,DEPTH_FS);
+const progGround=program(GROUND_VS,GROUND_FS);
+const progSky   =program(SKY_VS,SKY_FS);
+const progSpark =program(SPARK_VS,SPARK_FS);
+
+/* ---- GPU resources ------------------------------------------------ */
+const MAXP=24000;                          // particle capacity
+const vboPos=gl.createBuffer(), vboNrm=gl.createBuffer(), vboCol=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,vboPos);gl.bufferData(gl.ARRAY_BUFFER,MAXP*12,gl.DYNAMIC_DRAW);
+gl.bindBuffer(gl.ARRAY_BUFFER,vboNrm);gl.bufferData(gl.ARRAY_BUFFER,MAXP*12,gl.DYNAMIC_DRAW);
+gl.bindBuffer(gl.ARRAY_BUFFER,vboCol);gl.bufferData(gl.ARRAY_BUFFER,MAXP*12,gl.DYNAMIC_DRAW);
+const ibTri=gl.createBuffer(), ibLine=gl.createBuffer();
+let triCount=0, lineCount=0;
+
+function makeMeshVAO(withNrmCol){
+  const v=gl.createVertexArray();gl.bindVertexArray(v);
+  gl.bindBuffer(gl.ARRAY_BUFFER,vboPos);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  if(withNrmCol){
+    gl.bindBuffer(gl.ARRAY_BUFFER,vboNrm);gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,vboCol);gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,3,gl.FLOAT,false,0,0);
+  }
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibTri);gl.bindVertexArray(null);return v;
+}
+const vaoMesh=makeMeshVAO(true);          // lit pass
+const vaoDepth=makeMeshVAO(false);        // shadow pass
+const vaoWire=(()=>{                      // same attributes, line indices
+  const v=gl.createVertexArray();gl.bindVertexArray(v);
+  gl.bindBuffer(gl.ARRAY_BUFFER,vboPos);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,vboNrm);gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,vboCol);gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibLine);gl.bindVertexArray(null);return v;})();
+
+/* ground quad */
+const vaoGround=(()=>{const v=gl.createVertexArray();gl.bindVertexArray(v);
+  const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);
+  const S=70;gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-S,0,-S, S,0,-S, S,0,S, -S,0,-S, S,0,S, -S,0,S]),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  gl.bindVertexArray(null);return v;})();
+const vaoSky=gl.createVertexArray();      // attribute-less fullscreen tri
+
+/* sparks: interleaved pos(3) col(3) life(1) */
+const MAXS=4096;
+const sparkBuf=new Float32Array(MAXS*7);
+const vboSpark=gl.createBuffer();
+const vaoSpark=(()=>{const v=gl.createVertexArray();gl.bindVertexArray(v);
+  gl.bindBuffer(gl.ARRAY_BUFFER,vboSpark);gl.bufferData(gl.ARRAY_BUFFER,sparkBuf.byteLength,gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,28,0);
+  gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,28,12);
+  gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,1,gl.FLOAT,false,28,24);
+  gl.bindVertexArray(null);return v;})();
+
+/* shadow map: depth-only FBO with hardware depth comparison (PCF) */
+const SHADOW_RES=2048;
+const shadowTex=gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D,shadowTex);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.DEPTH_COMPONENT24,SHADOW_RES,SHADOW_RES,0,gl.DEPTH_COMPONENT,gl.UNSIGNED_INT,null);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_COMPARE_MODE,gl.COMPARE_REF_TO_TEXTURE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_COMPARE_FUNC,gl.LEQUAL);
+const shadowFBO=gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFBO);
+gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.TEXTURE_2D,shadowTex,0);
+gl.drawBuffers([gl.NONE]);gl.readBuffer(gl.NONE);
+gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+
+/* light + camera matrices */
+const LIGHT_DIR=(()=>{const v=[-0.48,-1.0,-0.34],l=1/Math.hypot(...v);return v.map(x=>x*l);})();
+const projM=new Float32Array(16), viewM=new Float32Array(16);
+const lightV=new Float32Array(16), lightP=new Float32Array(16),
+      lightVP=new Float32Array(16), lightVPB=new Float32Array(16);
+const BIAS=new Float32Array([0.5,0,0,0, 0,0.5,0,0, 0,0,0.5,0, 0.5,0.5,0.5,1]);
+{ // static directional light fitted around the arena
+  const cx=0,cy=1.5,cz=0,D=22;
+  m4LookAt(lightV,cx-LIGHT_DIR[0]*D,cy-LIGHT_DIR[1]*D,cz-LIGHT_DIR[2]*D,cx,cy,cz,0,1,0);
+  m4Ortho(lightP,-15,15,-15,15,2,44);
+  m4Mul(lightVP,lightP,lightV);
+  m4Mul(lightVPB,BIAS,lightVP);
+}
+
+/* =====================================================================
+   4. GEOMETRY — SDF tetrahedral lattices & exact convex polyhedra
+   ---------------------------------------------------------------------
+   Complex shapes are produced two ways:
+     a) latticeFromSDF — voxelise a signed-distance field on a regular
+        grid, then split every occupied cube into 6 tetrahedra with the
+        Kuhn (Freudenthal) decomposition around the main diagonal.  The
+        same local pattern in every cube guarantees neighbouring cubes
+        share identical face diagonals → a conforming tet mesh.
+     b) polyBody — exact icosahedra / dodecahedra fanned into tets from
+        their centroid (1 tet per surface triangle), which doubles as a
+        natural pre-fractured "shatter pattern" for destruction.
+   ===================================================================== */
+
+/* ---- SDF primitives ---- */
+function sdSphere(x,y,z,cx,cy,cz,r){return Math.hypot(x-cx,y-cy,z-cz)-r;}
+function sdEllip(x,y,z,cx,cy,cz,rx,ry,rz){          // cheap scaled-sphere bound
+  const px=(x-cx)/rx,py=(y-cy)/ry,pz=(z-cz)/rz;
+  return (Math.hypot(px,py,pz)-1)*Math.min(rx,ry,rz);
+}
+function smin(a,b,k){                               // polynomial smooth-union
+  const h=clamp(0.5+0.5*(b-a)/k,0,1);
+  return b+(a-b)*h-k*h*(1-h);
+}
+
+/* ---- a friendly Stanford-bunny-ish critter built from blended blobs ---- */
+function bunnySDF(x,y,z){
+  let d=sdEllip(x,y,z, 0.00,0.42,-0.05, 0.46,0.40,0.55);          // body
+  d=smin(d,sdSphere(x,y,z, 0.00,0.80, 0.32, 0.30),0.12);          // head
+  d=smin(d,sdEllip (x,y,z, 0.15,1.22, 0.22, 0.13,0.34,0.15),0.10);// ear R
+  d=smin(d,sdEllip (x,y,z,-0.15,1.22, 0.22, 0.13,0.34,0.15),0.10);// ear L
+  d=smin(d,sdSphere(x,y,z, 0.00,0.45,-0.62, 0.14),0.10);          // tail
+  d=smin(d,sdEllip (x,y,z, 0.20,0.10, 0.42, 0.15,0.11,0.26),0.10);// foot R
+  d=smin(d,sdEllip (x,y,z,-0.20,0.10, 0.42, 0.15,0.11,0.26),0.10);// foot L
+  return d;
+}
+
+function tetVol6(v,a,b,c,d){                        // 6 × signed volume
+  const ax=v[a*3],ay=v[a*3+1],az=v[a*3+2];
+  const bx=v[b*3]-ax,by=v[b*3+1]-ay,bz=v[b*3+2]-az;
+  const cx=v[c*3]-ax,cy=v[c*3+1]-ay,cz=v[c*3+2]-az;
+  const dx=v[d*3]-ax,dy=v[d*3+1]-ay,dz=v[d*3+2]-az;
+  return bx*(cy*dz-cz*dy)+by*(cz*dx-cx*dz)+bz*(cx*dy-cy*dx);
+}
+
+/* ---- voxel → tetrahedra lattice ---- */
+function latticeFromSDF(sdf,bmin,bmax,h){
+  const nx=Math.round((bmax[0]-bmin[0])/h),
+        ny=Math.round((bmax[1]-bmin[1])/h),
+        nz=Math.round((bmax[2]-bmin[2])/h);
+  const vmap=new Map(); let verts=[],tets=[];
+  const vid=(ix,iy,iz)=>{
+    const k=(ix*1024+iy)*1024+iz; let v=vmap.get(k);
+    if(v===undefined){v=verts.length/3;
+      verts.push(bmin[0]+ix*h,bmin[1]+iy*h,bmin[2]+iz*h);vmap.set(k,v);}
+    return v;};
+  // VTK hexahedron corner order: 6 is the body-diagonal opposite of 0
+  const C=[[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+  // Kuhn fan: six tets sharing the 0–6 diagonal, conforming across cubes
+  const K=[[0,1,2,6],[0,2,3,6],[0,3,7,6],[0,7,4,6],[0,4,5,6],[0,5,1,6]];
+  for(let ix=0;ix<nx;ix++)for(let iy=0;iy<ny;iy++)for(let iz=0;iz<nz;iz++){
+    const cx=bmin[0]+(ix+0.5)*h,cy=bmin[1]+(iy+0.5)*h,cz=bmin[2]+(iz+0.5)*h;
+    if(sdf(cx,cy,cz)>h*0.20) continue;              // cell centre inside-ish?
+    const c=C.map(o=>vid(ix+o[0],iy+o[1],iz+o[2]));
+    for(const t of K) tets.push(c[t[0]],c[t[1]],c[t[2]],c[t[3]]);
+  }
+  /* keep only the largest connected component (drops floating crumbs
+     produced by thin SDF features like ear tips) */
+  const nV=verts.length/3, par=new Int32Array(nV);
+  for(let i=0;i<nV;i++)par[i]=i;
+  const find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
+  for(let t=0;t<tets.length;t+=4){
+    const a=find(tets[t]);
+    for(let k=1;k<4;k++){const b=find(tets[t+k]);if(a!==b)par[b]=a;}
+  }
+  const sz=new Map();
+  for(let t=0;t<tets.length;t+=4){const r=find(tets[t]);sz.set(r,(sz.get(r)||0)+1);}
+  let best=-1,bestN=-1;sz.forEach((n,r)=>{if(n>bestN){bestN=n;best=r;}});
+  const remap=new Int32Array(nV).fill(-1); const v2=[],t2=[];
+  for(let t=0;t<tets.length;t+=4){
+    if(find(tets[t])!==best) continue;
+    for(let k=0;k<4;k++){
+      let g=tets[t+k];
+      if(remap[g]<0){remap[g]=v2.length/3;v2.push(verts[g*3],verts[g*3+1],verts[g*3+2]);}
+      t2.push(remap[g]);
+    }
+  }
+  /* enforce positive orientation (needed for boundary winding & volume C) */
+  for(let t=0;t<t2.length;t+=4)
+    if(tetVol6(v2,t2[t],t2[t+1],t2[t+2],t2[t+3])<0){
+      const tmp=t2[t+2];t2[t+2]=t2[t+3];t2[t+3]=tmp;}
+  return {verts:v2,tets:t2};
+}
+
+/* ---- boundary triangles of a tet mesh (face-count method) -------------
+   Interior faces are shared by exactly two tets and cancel; the survivors
+   form the closed boundary surface.  For a positively-oriented tet
+   (a,b,c,d) the OUTWARD-wound faces are (a,c,b)(a,b,d)(a,d,c)(b,c,d). */
+function tetBoundary(tets){
+  const map=new Map();
+  const tog=(a,b,c)=>{
+    const k=[a,b,c].sort((x,y)=>x-y).join(',');
+    if(map.has(k))map.delete(k);else map.set(k,[a,b,c]);
+  };
+  for(let t=0;t<tets.length;t+=4){
+    const a=tets[t],b=tets[t+1],c=tets[t+2],d=tets[t+3];
+    tog(a,c,b);tog(a,b,d);tog(a,d,c);tog(b,c,d);
+  }
+  const out=[];map.forEach(f=>out.push(f[0],f[1],f[2]));
+  return out;
+}
+
+/* ---- exact polyhedra ---- */
+function icosahedron(){
+  const t=(1+Math.sqrt(5))/2, s=1/Math.hypot(1,t);  // → unit circumradius
+  const V=[-1,t,0, 1,t,0, -1,-t,0, 1,-t,0, 0,-1,t, 0,1,t,
+            0,-1,-t, 0,1,-t, t,0,-1, t,0,1, -t,0,-1, -t,0,1].map(x=>x*s);
+  const F=[0,11,5, 0,5,1, 0,1,7, 0,7,10, 0,10,11,
+           1,5,9, 5,11,4, 11,10,2, 10,7,6, 7,1,8,
+           3,9,4, 3,4,2, 3,2,6, 3,6,8, 3,8,9,
+           4,9,5, 2,4,11, 6,2,10, 8,6,7, 9,8,1];
+  const groups=[];for(let i=0;i<20;i++)groups.push([i]); // 1 tet / face
+  return {verts:V,tris:F,groups};
+}
+function dodecahedron(){
+  const f=(1+Math.sqrt(5))/2, q=1/f, verts=[];
+  for(const sx of[-1,1])for(const sy of[-1,1])for(const sz of[-1,1])verts.push(sx,sy,sz);
+  for(const a of[-1,1])for(const b of[-1,1]){
+    verts.push(0,a*q,b*f);  verts.push(a*q,b*f,0);  verts.push(a*f,0,b*q);
+  }
+  const s=1/Math.sqrt(3);                            // → unit circumradius
+  for(let i=0;i<verts.length;i++)verts[i]*=s;
+  /* 12 face axes = sign permutations of (1,0,φ),(φ,1,0),(0,φ,1) */
+  const axes=[];
+  for(const a of[-1,1])for(const b of[-1,1]){
+    axes.push([a,0,b*f]); axes.push([a*f,b,0]); axes.push([0,a*f,b]);
+  }
+  const tris=[],groups=[];const nV=verts.length/3;
+  for(const ax of axes){
+    const al=Math.hypot(ax[0],ax[1],ax[2]);
+    const A=[ax[0]/al,ax[1]/al,ax[2]/al];
+    const scored=[];
+    for(let i=0;i<nV;i++)
+      scored.push([verts[i*3]*A[0]+verts[i*3+1]*A[1]+verts[i*3+2]*A[2],i]);
+    scored.sort((p,q2)=>q2[0]-p[0]);
+    const ring=scored.slice(0,5).map(p=>p[1]);       // the 5 face vertices
+    /* sort pentagon vertices by angle around the face axis */
+    let U=[1,0,0];
+    if(Math.abs(A[0])>0.9)U=[0,1,0];
+    let ux=U[1]*A[2]-U[2]*A[1],uy=U[2]*A[0]-U[0]*A[2],uz=U[0]*A[1]-U[1]*A[0];
+    const ul=1/Math.hypot(ux,uy,uz);ux*=ul;uy*=ul;uz*=ul;
+    const vx=A[1]*uz-A[2]*uy,vy=A[2]*ux-A[0]*uz,vz=A[0]*uy-A[1]*ux;
+    ring.sort((i,j)=>{
+      const ai=Math.atan2(verts[i*3]*vx+verts[i*3+1]*vy+verts[i*3+2]*vz,
+                          verts[i*3]*ux+verts[i*3+1]*uy+verts[i*3+2]*uz);
+      const aj=Math.atan2(verts[j*3]*vx+verts[j*3+1]*vy+verts[j*3+2]*vz,
+                          verts[j*3]*ux+verts[j*3+1]*uy+verts[j*3+2]*uz);
+      return ai-aj;});
+    /* enforce outward winding */
+    const p0=ring[0]*3,p1=ring[1]*3,p2=ring[2]*3;
+    const e1=[verts[p1]-verts[p0],verts[p1+1]-verts[p0+1],verts[p1+2]-verts[p0+2]];
+    const e2=[verts[p2]-verts[p0],verts[p2+1]-verts[p0+1],verts[p2+2]-verts[p0+2]];
+    const n=[e1[1]*e2[2]-e1[2]*e2[1],e1[2]*e2[0]-e1[0]*e2[2],e1[0]*e2[1]-e1[1]*e2[0]];
+    if(n[0]*A[0]+n[1]*A[1]+n[2]*A[2]<0)ring.reverse();
+    const g=[];
+    for(let k=1;k<4;k++){                            // pentagon → 3 tris
+      g.push(tris.length/3);
+      tris.push(ring[0],ring[k],ring[k+1]);
+    }
+    groups.push(g);                                  // 3 tets / pentagon
+  }
+  return {verts,tris,groups};
+}
+
+/* ---- centroid-fan a closed surface into tets ---- */
+function polyBody(shape){
+  const verts=shape.verts.slice(), tris=shape.tris;
+  let cx=0,cy=0,cz=0;const nV=verts.length/3;
+  for(let i=0;i<nV;i++){cx+=verts[i*3];cy+=verts[i*3+1];cz+=verts[i*3+2];}
+  cx/=nV;cy/=nV;cz/=nV;
+  const ci=verts.length/3;verts.push(cx,cy,cz);
+  const tets=[];
+  for(let t=0;t<tris.length;t+=3){
+    let a=ci,b=tris[t],c=tris[t+1],d=tris[t+2];
+    if(tetVol6(verts,a,b,c,d)<0){const tmp=c;c=d;d=tmp;}
+    tets.push(a,b,c,d);
+  }
+  /* shatter groups reference tet indices (1:1 with input tris here) */
+  return {verts,tets,surf:tris.slice(),groups:shape.groups.map(g=>g.slice()),centroid:ci};
+}
+
+/* ---- rigid transform of a flat vertex array (scale → rotate → move) ---- */
+const _M9=new Float32Array(9);
+function transformVerts(v,s,q,tx,ty,tz){
+  const out=new Array(v.length);
+  const R=q?quatToMat3(q,_M9):null;
+  for(let i=0;i<v.length;i+=3){
+    let x=v[i]*s,y=v[i+1]*s,z=v[i+2]*s;
+    if(R){const X=R[0]*x+R[3]*y+R[6]*z,Y=R[1]*x+R[4]*y+R[7]*z,Z=R[2]*x+R[5]*y+R[8]*z;x=X;y=Y;z=Z;}
+    out[i]=x+tx;out[i+1]=y+ty;out[i+2]=z+tz;
+  }
+  return out;
+}
+
+/* =====================================================================
+   5. PHYSICS — unified XPBD particle solver ("small steps" scheme)
+   ---------------------------------------------------------------------
+   Everything — soft bunnies, rigid stacks, chains, shattering polyhedra —
+   is particles + constraints, integrated with many tiny substeps
+   (Macklin et al. 2019: 1 iteration × N substeps beats N iterations).
+
+   Per substep:  integrate → mouse grab → distance constraints →
+                 volume constraints → rigid shape-matching →
+                 particle/particle & ground contacts (with position-level
+                 Coulomb friction) → velocity update → restitution pass.
+
+   Soft bodies : XPBD edge springs on unique tet edges  (C = |pi-pj| - L0)
+                 + tet volume preservation               (C = 6V - 6V0)
+   Rigid bodies: shape matching with robust quaternion rotation
+                 extraction (Müller 2016) — unconditionally stable.
+   ===================================================================== */
+const DT=1/60, SUB=12, H=DT/SUB;
+
+const P={                                   // structure-of-arrays particle pool
+  pos :new Float32Array(MAXP*3), prev:new Float32Array(MAXP*3),
+  vel :new Float32Array(MAXP*3), rpos:new Float32Array(MAXP*3), // skinned render pos
+  nrm :new Float32Array(MAXP*3), col :new Float32Array(MAXP*3),
+  w   :new Float32Array(MAXP),   r   :new Float32Array(MAXP),   // invMass, radius
+  skin:new Float32Array(MAXP),                                  // render offset along normal
+  body:new Int32Array(MAXP),  n:0
+};
+let bodies=[];                              // body descriptors
+let jointEdges=[];                          // cross-body distance constraints (chain)
+let E=new Float32Array(0),NE=0;             // packed edges [i,j,rest,compScale]×NE
+let T=new Float32Array(0),NT=0;             // packed tets  [a,b,c,d,6V0,comp]×NT
+const sim={gravity:9.8,stiffness:0.8,damping:0.08,speed:1,rest:0.35,fric:0.5,
+           paused:false,wire:false};
+const grab={i:-1,tx:0,ty:0,tz:0};
+const pendingBreak=new Set();
+let lastContacts=0;
+
+/* stiffness slider (0..1) → XPBD compliance, log-mapped over 4.5 decades */
+const alphaEdge=()=>Math.pow(10,-7+4.5*(1-sim.stiffness));
+
+/* ---- substep kernels ---- */
+function integrate(h){
+  const g=sim.gravity, drag=Math.max(0,1-sim.damping*h*4);
+  for(let i=0;i<P.n;i++){
+    if(P.w[i]<=0){P.prev[i*3]=P.pos[i*3];P.prev[i*3+1]=P.pos[i*3+1];P.prev[i*3+2]=P.pos[i*3+2];continue;}
+    P.vel[i*3+1]-=g*h;
+    P.vel[i*3]*=drag;P.vel[i*3+1]*=drag;P.vel[i*3+2]*=drag;
+    P.prev[i*3]=P.pos[i*3];P.prev[i*3+1]=P.pos[i*3+1];P.prev[i*3+2]=P.pos[i*3+2];
+    P.pos[i*3]+=P.vel[i*3]*h;P.pos[i*3+1]+=P.vel[i*3+1]*h;P.pos[i*3+2]+=P.vel[i*3+2]*h;
+  }
+}
+
+function grabSolve(h){
+  const i=grab.i; if(i<0||P.w[i]<=0)return;
+  let dx=grab.tx-P.pos[i*3],dy=grab.ty-P.pos[i*3+1],dz=grab.tz-P.pos[i*3+2];
+  dx*=0.35;dy*=0.35;dz*=0.35;
+  const l=Math.hypot(dx,dy,dz),cap=30*h;            // cap → max 30 m/s fling
+  if(l>cap){const k=cap/l;dx*=k;dy*=k;dz*=k;}
+  P.pos[i*3]+=dx;P.pos[i*3+1]+=dy;P.pos[i*3+2]+=dz;
+}
+
+function solveEdges(aBar){
+  for(let e=0;e<NE;e++){
+    const o=e*4,i=E[o]|0,j=E[o+1]|0;
+    const wi=P.w[i],wj=P.w[j],wsum=wi+wj; if(wsum<=0)continue;
+    let dx=P.pos[i*3]-P.pos[j*3],dy=P.pos[i*3+1]-P.pos[j*3+1],dz=P.pos[i*3+2]-P.pos[j*3+2];
+    const d=Math.hypot(dx,dy,dz);if(d<1e-9)continue;
+    const C=d-E[o+2];
+    const dl=-C/(wsum+aBar*E[o+3]);                 // XPBD Δλ (λ reset / substep)
+    const k=dl/d;
+    P.pos[i*3]+=dx*k*wi;P.pos[i*3+1]+=dy*k*wi;P.pos[i*3+2]+=dz*k*wi;
+    P.pos[j*3]-=dx*k*wj;P.pos[j*3+1]-=dy*k*wj;P.pos[j*3+2]-=dz*k*wj;
+  }
+}
+
+function solveVolumes(aBar){
+  for(let t=0;t<NT;t++){
+    const o=t*6,a=T[o]|0,b=T[o+1]|0,c=T[o+2]|0,d=T[o+3]|0;
+    const wa=P.w[a],wb=P.w[b],wc=P.w[c],wd=P.w[d];
+    if(wa+wb+wc+wd<=0)continue;
+    const ax=P.pos[a*3],ay=P.pos[a*3+1],az=P.pos[a*3+2];
+    const e1x=P.pos[b*3]-ax,e1y=P.pos[b*3+1]-ay,e1z=P.pos[b*3+2]-az;
+    const e2x=P.pos[c*3]-ax,e2y=P.pos[c*3+1]-ay,e2z=P.pos[c*3+2]-az;
+    const e3x=P.pos[d*3]-ax,e3y=P.pos[d*3+1]-ay,e3z=P.pos[d*3+2]-az;
+    /* ∇C w.r.t. b,c,d are cross products of the opposite edge pair */
+    const gbx=e2y*e3z-e2z*e3y,gby=e2z*e3x-e2x*e3z,gbz=e2x*e3y-e2y*e3x;
+    const gcx=e3y*e1z-e3z*e1y,gcy=e3z*e1x-e3x*e1z,gcz=e3x*e1y-e3y*e1x;
+    const gdx=e1y*e2z-e1z*e2y,gdy=e1z*e2x-e1x*e2z,gdz=e1x*e2y-e1y*e2x;
+    const gax=-gbx-gcx-gdx,gay=-gby-gcy-gdy,gaz=-gbz-gcz-gdz;
+    const C=(e1x*gbx+e1y*gby+e1z*gbz)-T[o+4];       // 6V − 6V0
+    const den=wa*(gax*gax+gay*gay+gaz*gaz)+wb*(gbx*gbx+gby*gby+gbz*gbz)
+             +wc*(gcx*gcx+gcy*gcy+gcz*gcz)+wd*(gdx*gdx+gdy*gdy+gdz*gdz)
+             +aBar*T[o+5];
+    if(den<1e-12)continue;
+    const dl=-C/den;
+    P.pos[a*3]+=gax*dl*wa;P.pos[a*3+1]+=gay*dl*wa;P.pos[a*3+2]+=gaz*dl*wa;
+    P.pos[b*3]+=gbx*dl*wb;P.pos[b*3+1]+=gby*dl*wb;P.pos[b*3+2]+=gbz*dl*wb;
+    P.pos[c*3]+=gcx*dl*wc;P.pos[c*3+1]+=gcy*dl*wc;P.pos[c*3+2]+=gcz*dl*wc;
+    P.pos[d*3]+=gdx*dl*wd;P.pos[d*3+1]+=gdy*dl*wd;P.pos[d*3+2]+=gdz*dl*wd;
+  }
+}
+
+/* ---- rigid bodies: shape matching ---- */
+const _A9=new Float32Array(9),_R9b=new Float32Array(9);
+function shapeMatchAll(){
+  for(const b of bodies){
+    if(b.type!=='rigid'||b.dead)continue;
+    const s=b.start,n=b.cnt;
+    let cx=0,cy=0,cz=0;
+    for(let k=0;k<n;k++){const i=s+k;cx+=P.pos[i*3];cy+=P.pos[i*3+1];cz+=P.pos[i*3+2];}
+    cx/=n;cy/=n;cz/=n;
+    _A9.fill(0);
+    for(let k=0;k<n;k++){                            // A = Σ p qᵀ  (col-major)
+      const i=s+k;
+      const px=P.pos[i*3]-cx,py=P.pos[i*3+1]-cy,pz=P.pos[i*3+2]-cz;
+      const qx=b.rel[k*3],qy=b.rel[k*3+1],qz=b.rel[k*3+2];
+      _A9[0]+=px*qx;_A9[1]+=py*qx;_A9[2]+=pz*qx;
+      _A9[3]+=px*qy;_A9[4]+=py*qy;_A9[5]+=pz*qy;
+      _A9[6]+=px*qz;_A9[7]+=py*qz;_A9[8]+=pz*qz;
+    }
+    extractRotation(_A9,b.q,10);                     // warm-started Müller 2016
+    const R=quatToMat3(b.q,_R9b);
+    for(let k=0;k<n;k++){                            // snap to rigid goal pose
+      const i=s+k;if(P.w[i]<=0)continue;
+      const qx=b.rel[k*3],qy=b.rel[k*3+1],qz=b.rel[k*3+2];
+      P.pos[i*3]  =cx+R[0]*qx+R[3]*qy+R[6]*qz;
+      P.pos[i*3+1]=cy+R[1]*qx+R[4]*qy+R[7]*qz;
+      P.pos[i*3+2]=cz+R[2]*qx+R[5]*qy+R[8]*qz;
+    }
+  }
+}
+
+/* ---- broad phase: spatial hash, pairs built once per outer frame ---- */
+let pairs=new Int32Array(4096),pairCount=0,hashMap=new Map();
+function buildPairs(){
+  pairCount=0;hashMap.clear();
+  let rmax=0,vmax=0;
+  for(let i=0;i<P.n;i++){
+    if(P.r[i]>rmax)rmax=P.r[i];
+    const v=Math.abs(P.vel[i*3])+Math.abs(P.vel[i*3+1])+Math.abs(P.vel[i*3+2]);
+    if(v>vmax)vmax=v;
+  }
+  if(rmax<=0)return;
+  const margin=0.06+vmax*DT*1.2;                    // covers travel in 1/60 s
+  const cell=Math.max(2*rmax+margin,0.22),inv=1/cell;
+  const key=(x,y,z)=>((((x*inv)|0)+512)*2048+(((y*inv)|0)+512))*2048+(((z*inv)|0)+512);
+  for(let i=0;i<P.n;i++){
+    if(P.r[i]<=0)continue;
+    const k=key(P.pos[i*3],P.pos[i*3+1],P.pos[i*3+2]);
+    let arr=hashMap.get(k);if(!arr){arr=[];hashMap.set(k,arr);}
+    arr.push(i);
+  }
+  for(let i=0;i<P.n;i++){
+    if(P.r[i]<=0)continue;
+    const bi=P.body[i];
+    const ix=((P.pos[i*3]*inv)|0)+512,iy=((P.pos[i*3+1]*inv)|0)+512,iz=((P.pos[i*3+2]*inv)|0)+512;
+    for(let dx2=-1;dx2<=1;dx2++)for(let dy2=-1;dy2<=1;dy2++)for(let dz2=-1;dz2<=1;dz2++){
+      const arr=hashMap.get(((ix+dx2)*2048+(iy+dy2))*2048+(iz+dz2));
+      if(!arr)continue;
+      for(const j of arr){
+        if(j<=i)continue;
+        const bj=P.body[j];
+        if(bi===bj)continue;                        // no self-collision
+        if(bodies[bi].linkPrev===bj||bodies[bj].linkPrev===bi)continue; // chain joints
+        const t=P.r[i]+P.r[j]+margin;
+        const ddx=P.pos[i*3]-P.pos[j*3],ddy=P.pos[i*3+1]-P.pos[j*3+1],ddz=P.pos[i*3+2]-P.pos[j*3+2];
+        if(ddx*ddx+ddy*ddy+ddz*ddz>t*t)continue;
+        if(pairCount*2+2>pairs.length){const np=new Int32Array(pairs.length*2);np.set(pairs);pairs=np;}
+        pairs[pairCount*2]=i;pairs[pairCount*2+1]=j;pairCount++;
+      }
+    }
+  }
+}
+
+/* ---- narrow phase: contacts with position-level Coulomb friction.
+   Each resolved contact also logs its pre-solve normal speed (vnOld) so
+   the restitution pass can restore bounce that pure PBD would kill. ---- */
+const MAXC=16384;
+const contacts=new Float32Array(MAXC*7);let contactCount=0;  // i,j,nx,ny,nz,vnOld,pen
+function frictionDelta(i,nx,ny,nz,pen){
+  /* remove tangential motion accumulated this substep (static) or scale it
+     down proportional to penetration (kinetic) — Coulomb-ish in positions */
+  let dx=P.pos[i*3]-P.prev[i*3],dy=P.pos[i*3+1]-P.prev[i*3+1],dz=P.pos[i*3+2]-P.prev[i*3+2];
+  const dn=dx*nx+dy*ny+dz*nz;
+  dx-=nx*dn;dy-=ny*dn;dz-=nz*dn;
+  const l=Math.hypot(dx,dy,dz);if(l<1e-9)return null;
+  const muS=sim.fric,muK=sim.fric*0.9;
+  const k=(l<muS*pen)?1:Math.min(muK*pen/l,1);
+  return [dx*k,dy*k,dz*k];
+}
+function solveGround(){
+  for(let i=0;i<P.n;i++){
+    const r=P.r[i];if(r<=0||P.w[i]<=0)continue;
+    const pen=r-P.pos[i*3+1];
+    if(pen<=0)continue;
+    const vn=P.vel[i*3+1];                          // pre-solve approach speed
+    P.pos[i*3+1]+=pen;
+    const f=frictionDelta(i,0,1,0,pen);
+    if(f){P.pos[i*3]-=f[0];P.pos[i*3+2]-=f[2];}
+    if(contactCount<MAXC){
+      const o=contactCount*7;
+      contacts[o]=i;contacts[o+1]=-1;contacts[o+2]=0;contacts[o+3]=1;contacts[o+4]=0;
+      contacts[o+5]=vn;contacts[o+6]=pen;contactCount++;
+    }
+  }
+}
+function solvePairs(){
+  for(let p=0;p<pairCount;p++){
+    const i=pairs[p*2],j=pairs[p*2+1];
+    const wi=P.w[i],wj=P.w[j],wsum=wi+wj;if(wsum<=0)continue;
+    let nx=P.pos[i*3]-P.pos[j*3],ny=P.pos[i*3+1]-P.pos[j*3+1],nz=P.pos[i*3+2]-P.pos[j*3+2];
+    const d=Math.hypot(nx,ny,nz),target=P.r[i]+P.r[j];
+    if(d>=target||d<1e-9)continue;
+    nx/=d;ny/=d;nz/=d;
+    const pen=target-d;
+    const vn=(P.vel[i*3]-P.vel[j*3])*nx+(P.vel[i*3+1]-P.vel[j*3+1])*ny+(P.vel[i*3+2]-P.vel[j*3+2])*nz;
+    P.pos[i*3]+=nx*pen*wi/wsum;P.pos[i*3+1]+=ny*pen*wi/wsum;P.pos[i*3+2]+=nz*pen*wi/wsum;
+    P.pos[j*3]-=nx*pen*wj/wsum;P.pos[j*3+1]-=ny*pen*wj/wsum;P.pos[j*3+2]-=nz*pen*wj/wsum;
+    /* relative tangential friction */
+    const fi=frictionDelta(i,nx,ny,nz,pen),fj=frictionDelta(j,nx,ny,nz,pen);
+    if(fi&&wi>0){const k=wi/wsum;P.pos[i*3]-=fi[0]*k;P.pos[i*3+1]-=fi[1]*k;P.pos[i*3+2]-=fi[2]*k;}
+    if(fj&&wj>0){const k=wj/wsum;P.pos[j*3]-=fj[0]*k;P.pos[j*3+1]-=fj[1]*k;P.pos[j*3+2]-=fj[2]*k;}
+    if(contactCount<MAXC){
+      const o=contactCount*7;
+      contacts[o]=i;contacts[o+1]=j;contacts[o+2]=nx;contacts[o+3]=ny;contacts[o+4]=nz;
+      contacts[o+5]=vn;contacts[o+6]=pen;contactCount++;
+    }
+  }
+}
+
+function updateVelocities(h){
+  const ih=1/h;
+  for(let i=0;i<P.n;i++){
+    if(P.w[i]<=0)continue;
+    P.vel[i*3]  =(P.pos[i*3]  -P.prev[i*3])*ih;
+    P.vel[i*3+1]=(P.pos[i*3+1]-P.prev[i*3+1])*ih;
+    P.vel[i*3+2]=(P.pos[i*3+2]-P.prev[i*3+2])*ih;
+  }
+}
+
+function applyRestitution(h){
+  const thresh=2*sim.gravity*h;                     // ignore resting micro-hits
+  for(let c=0;c<contactCount;c++){
+    const o=c*7,i=contacts[o]|0,j=contacts[o+1]|0;
+    const nx=contacts[o+2],ny=contacts[o+3],nz=contacts[o+4],vnOld=contacts[o+5];
+    if(vnOld>=-thresh)continue;
+    const wi=P.w[i],wj=j<0?0:P.w[j],wsum=wi+wj;if(wsum<=0)continue;
+    let vn=P.vel[i*3]*nx+P.vel[i*3+1]*ny+P.vel[i*3+2]*nz;
+    if(j>=0)vn-=P.vel[j*3]*nx+P.vel[j*3+1]*ny+P.vel[j*3+2]*nz;
+    const dv=-sim.rest*vnOld-vn;                    // push back to bounce speed
+    if(dv<=0)continue;
+    const imp=dv/wsum;
+    P.vel[i*3]+=nx*imp*wi;P.vel[i*3+1]+=ny*imp*wi;P.vel[i*3+2]+=nz*imp*wi;
+    if(j>=0){P.vel[j*3]-=nx*imp*wj;P.vel[j*3+1]-=ny*imp*wj;P.vel[j*3+2]-=nz*imp*wj;}
+    /* impact FX + fracture triggers, driven by approach speed */
+    const sp=-vnOld;
+    if(sp>2.4){
+      const x=P.pos[i*3],y=P.pos[i*3+1],z=P.pos[i*3+2];
+      spawnSparks(x,y,z,nx,ny,nz,Math.min(2+sp*1.2,12)|0,sp*0.5,
+                  1.0,0.78,0.40);
+      const bi=bodies[P.body[i]];
+      if(bi.breakable&&sp>bi.breakSpeed)pendingBreak.add(bi);
+      if(j>=0){const bj=bodies[P.body[j]];
+        if(bj.breakable&&sp>bj.breakSpeed)pendingBreak.add(bj);}
+    }
+  }
+}
+
+/* ---- one fixed 1/60 s step = SUB tiny substeps ---- */
+function physStep(){
+  buildPairs();
+  const aE=alphaEdge()/(H*H), aV=aE*1e-3;           // XPBD ᾱ = α/h²
+  for(let s2=0;s2<SUB;s2++){
+    integrate(H);
+    grabSolve(H);
+    solveEdges(aE);
+    solveVolumes(aV);
+    shapeMatchAll();
+    contactCount=0;
+    solvePairs();
+    solveGround();
+    updateVelocities(H);
+    applyRestitution(H);
+  }
+  lastContacts=contactCount;
+  if(pendingBreak.size){
+    pendingBreak.forEach(b=>shatterBody(b));
+    pendingBreak.clear();rebuildTopo();
+  }
+}
+
+/* =====================================================================
+   6. SPARKS — additive point-sprite particles for impacts & fractures
+   ===================================================================== */
+const sparkVel=new Float32Array(MAXS*3),sparkFade=new Float32Array(MAXS);
+let nSpark=0;
+function spawnSparks(x,y,z,nx,ny,nz,count,speed,r,g,b){
+  for(let k=0;k<count;k++){
+    if(nSpark>=MAXS)return;
+    const i=nSpark++,o=i*7;
+    /* random cone around contact normal */
+    let dx=nx+(rnd()-0.5)*1.6,dy=ny+(rnd()-0.5)*1.6,dz=nz+(rnd()-0.5)*1.6;
+    const l=1/Math.hypot(dx,dy,dz);
+    const sp=speed*(0.5+rnd());
+    sparkBuf[o]=x;sparkBuf[o+1]=y;sparkBuf[o+2]=z;
+    sparkBuf[o+3]=r*(0.7+0.5*rnd());sparkBuf[o+4]=g*(0.7+0.5*rnd());sparkBuf[o+5]=b*(0.7+0.5*rnd());
+    sparkBuf[o+6]=1;
+    sparkVel[i*3]=dx*l*sp;sparkVel[i*3+1]=dy*l*sp+0.8;sparkVel[i*3+2]=dz*l*sp;
+    sparkFade[i]=1.4+rnd()*1.6;
+  }
+}
+function updateSparks(dt){
+  for(let i=0;i<nSpark;i++){
+    const o=i*7;
+    sparkVel[i*3+1]-=sim.gravity*0.45*dt;
+    sparkBuf[o]+=sparkVel[i*3]*dt;sparkBuf[o+1]+=sparkVel[i*3+1]*dt;sparkBuf[o+2]+=sparkVel[i*3+2]*dt;
+    if(sparkBuf[o+1]<0.015&&sparkVel[i*3+1]<0){sparkBuf[o+1]=0.015;sparkVel[i*3+1]*=-0.35;}
+    sparkBuf[o+6]-=sparkFade[i]*dt;
+    if(sparkBuf[o+6]<=0){                            // swap-remove dead spark
+      const L=--nSpark,lo=L*7;
+      for(let k=0;k<7;k++)sparkBuf[o+k]=sparkBuf[lo+k];
+      sparkVel[i*3]=sparkVel[L*3];sparkVel[i*3+1]=sparkVel[L*3+1];sparkVel[i*3+2]=sparkVel[L*3+2];
+      sparkFade[i]=sparkFade[L];i--;
+    }
+  }
+}
+
+/* =====================================================================
+   7. BODIES — creation, fracturing, presets
+   ===================================================================== */
+function addBody(o){
+  const cnt=o.verts.length/3;
+  if(P.n+cnt>MAXP)return null;                      // pool exhausted → skip
+  const start=P.n,idx=bodies.length;
+  const b={start,cnt,type:o.type,dead:false,q:[0,0,0,1],rel:null,
+           surf:o.surf,localTets:o.tets,edges:[],vols:[],
+           mass:o.mass,linkPrev:o.linkPrev??-1,
+           breakable:!!o.breakable,breakSpeed:o.breakSpeed||1e9,
+           groups:o.groups||null,shardR:o.shardR||0.10,
+           baseColor:o.baseColor||[0.7,0.7,0.8]};
+  /* centre of mass (uniform particle masses) */
+  let cx=0,cy=0,cz=0;
+  for(let k=0;k<cnt;k++){cx+=o.verts[k*3];cy+=o.verts[k*3+1];cz+=o.verts[k*3+2];}
+  cx/=cnt;cy/=cnt;cz/=cnt;
+  const av=o.angVel||[0,0,0],lv=o.vel||[0,0,0];
+  for(let k=0;k<cnt;k++){
+    const i=start+k,x=o.verts[k*3],y=o.verts[k*3+1],z=o.verts[k*3+2];
+    P.pos[i*3]=x;P.pos[i*3+1]=y;P.pos[i*3+2]=z;
+    P.prev[i*3]=x;P.prev[i*3+1]=y;P.prev[i*3+2]=z;
+    const rx=x-cx,ry=y-cy,rz=z-cz;                  // v = v_lin + ω × r
+    P.vel[i*3]  =lv[0]+av[1]*rz-av[2]*ry;
+    P.vel[i*3+1]=lv[1]+av[2]*rx-av[0]*rz;
+    P.vel[i*3+2]=lv[2]+av[0]*ry-av[1]*rx;
+    P.w[i]=cnt/o.mass;                              // invMass per particle
+    P.r[i]=o.radiusOf?o.radiusOf(k):o.radius;
+    P.skin[i]=(o.skin||0)*P.r[i];
+    P.body[i]=idx;
+    const col=o.colorOf?o.colorOf(k,x,y,z):b.baseColor;
+    P.col[i*3]=col[0];P.col[i*3+1]=col[1];P.col[i*3+2]=col[2];
+  }
+  if(o.pins)for(const k of o.pins)P.w[start+k]=0;
+  if(o.type==='soft'){
+    /* unique edges of the tet mesh → XPBD springs */
+    const seen=new Set();
+    for(let t=0;t<o.tets.length;t+=4)
+      for(let a2=0;a2<3;a2++)for(let b2=a2+1;b2<4;b2++){
+        let u=o.tets[t+a2],v=o.tets[t+b2];
+        if(u>v){const tmp=u;u=v;v=tmp;}
+        const key=u*65536+v;
+        if(seen.has(key))continue;seen.add(key);
+        const rest=Math.hypot(o.verts[u*3]-o.verts[v*3],
+                              o.verts[u*3+1]-o.verts[v*3+1],
+                              o.verts[u*3+2]-o.verts[v*3+2]);
+        b.edges.push([u,v,rest,o.comp??1]);
+      }
+    for(let t=0;t<o.tets.length;t+=4)               // volume preservation
+      b.vols.push([o.tets[t],o.tets[t+1],o.tets[t+2],o.tets[t+3],
+                   tetVol6(o.verts,o.tets[t],o.tets[t+1],o.tets[t+2],o.tets[t+3]),
+                   o.comp??1]);
+  }else{                                            // rigid: rest-pose offsets
+    b.rel=new Float32Array(cnt*3);
+    for(let k=0;k<cnt;k++){
+      b.rel[k*3]=o.verts[k*3]-cx;b.rel[k*3+1]=o.verts[k*3+1]-cy;b.rel[k*3+2]=o.verts[k*3+2]-cz;
+    }
+  }
+  P.n+=cnt;bodies.push(b);return b;
+}
+
+/* ---- pack constraints + rebuild index buffers after topology changes ---- */
+function rebuildTopo(){
+  let ne=jointEdges.length,nt=0;
+  for(const b of bodies){if(b.dead)continue;ne+=b.edges.length;nt+=b.vols.length;}
+  E=new Float32Array(ne*4);T=new Float32Array(nt*6);NE=ne;NT=nt;
+  let ei=0,ti=0;
+  for(const b of bodies){
+    if(b.dead)continue;
+    for(const e of b.edges){
+      E[ei*4]=b.start+e[0];E[ei*4+1]=b.start+e[1];E[ei*4+2]=e[2];E[ei*4+3]=e[3];ei++;
+    }
+    for(const v of b.vols){
+      T[ti*6]=b.start+v[0];T[ti*6+1]=b.start+v[1];T[ti*6+2]=b.start+v[2];
+      T[ti*6+3]=b.start+v[3];T[ti*6+4]=v[4];T[ti*6+5]=v[5];ti++;
+    }
+  }
+  for(const j of jointEdges){
+    E[ei*4]=j[0];E[ei*4+1]=j[1];E[ei*4+2]=j[2];E[ei*4+3]=j[3];ei++;
+  }
+  /* surface triangles + unique wireframe edges (global indices) */
+  const tris=[],lineSet=new Set(),lines=[];
+  for(const b of bodies){
+    if(b.dead)continue;
+    for(let f=0;f<b.surf.length;f+=3){
+      const a=b.start+b.surf[f],c=b.start+b.surf[f+1],d=b.start+b.surf[f+2];
+      tris.push(a,c,d);
+      const eds=[[a,c],[c,d],[d,a]];
+      for(const e of eds){
+        const u=Math.min(e[0],e[1]),v=Math.max(e[0],e[1]),k=u*24000+v;
+        if(!lineSet.has(k)){lineSet.add(k);lines.push(u,v);}
+      }
+    }
+  }
+  gl.bindVertexArray(null);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibTri);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint32Array(tris),gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibLine);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint32Array(lines),gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,null);
+  triCount=tris.length;lineCount=lines.length;
+  gl.bindBuffer(gl.ARRAY_BUFFER,vboCol);
+  gl.bufferSubData(gl.ARRAY_BUFFER,0,P.col.subarray(0,P.n*3));
+}
+
+/* ---- fracture: explode a breakable rigid body into its shard groups ----
+   Every shard is a pyramidal chunk (tets sharing the body centroid),
+   duplicated into fresh particles, shrunk slightly toward its own
+   centroid so chunks separate cleanly, and given a radial burst. ---- */
+function shatterBody(b){
+  if(b.dead||!b.groups)return;
+  b.dead=true;
+  const s=b.start,n=b.cnt;
+  let cx=0,cy=0,cz=0,vx=0,vy=0,vz=0;
+  for(let k=0;k<n;k++){const i=s+k;
+    cx+=P.pos[i*3];cy+=P.pos[i*3+1];cz+=P.pos[i*3+2];
+    vx+=P.vel[i*3];vy+=P.vel[i*3+1];vz+=P.vel[i*3+2];}
+  cx/=n;cy/=n;cz/=n;vx/=n;vy/=n;vz/=n;
+  const shardMass=b.mass/b.groups.length*0.9;
+  for(const g of b.groups){
+    /* collect this group's tets, remap shared verts to a local list */
+    const map=new Map(),verts=[],tets=[];
+    for(const tIdx of g){
+      for(let k2=0;k2<4;k2++){
+        const lv=b.localTets[tIdx*4+k2];
+        let nv=map.get(lv);
+        if(nv===undefined){
+          nv=verts.length/3;map.set(lv,nv);
+          const gi=s+lv;
+          verts.push(P.pos[gi*3],P.pos[gi*3+1],P.pos[gi*3+2]);
+        }
+        tets.push(nv);
+      }
+    }
+    let gx=0,gy=0,gz=0;const nv=verts.length/3;
+    for(let k2=0;k2<nv;k2++){gx+=verts[k2*3];gy+=verts[k2*3+1];gz+=verts[k2*3+2];}
+    gx/=nv;gy/=nv;gz/=nv;
+    for(let k2=0;k2<nv;k2++){                        // shrink 12% → clean split
+      verts[k2*3]  =gx+(verts[k2*3]  -gx)*0.88;
+      verts[k2*3+1]=gy+(verts[k2*3+1]-gy)*0.88;
+      verts[k2*3+2]=gz+(verts[k2*3+2]-gz)*0.88;
+    }
+    let dx=gx-cx,dy=gy-cy,dz=gz-cz;
+    const dl=Math.hypot(dx,dy,dz)||1;dx/=dl;dy/=dl;dz/=dl;
+    const burst=1.8+rnd()*1.6;
+    const bc=b.baseColor,sh=0.65+0.45*rnd();
+    addBody({verts,tets,surf:tetBoundary(tets),type:'rigid',
+      mass:shardMass,radius:b.shardR,skin:0,
+      baseColor:[bc[0]*sh,bc[1]*sh,bc[2]*sh],
+      vel:[vx+dx*burst,vy+dy*burst+0.6,vz+dz*burst],
+      angVel:[(rnd()-0.5)*8,(rnd()-0.5)*8,(rnd()-0.5)*8]});
+  }
+  for(let k=0;k<n;k++){const i=s+k;                 // retire parent particles
+    P.w[i]=0;P.r[i]=0;P.skin[i]=0;
+    P.vel[i*3]=P.vel[i*3+1]=P.vel[i*3+2]=0;}
+  spawnSparks(cx,cy,cz,0,1,0,46,4.2,1.0,0.62,0.30);
+  spawnSparks(cx,cy,cz,0,1,0,30,2.6,b.baseColor[0]*1.3,b.baseColor[1]*1.3,b.baseColor[2]*1.3);
+}
+
+/* ---- per-frame: smooth normals + outward "skin" so the visual surface
+   matches the particles' collision radius (closes stacking gaps) ---- */
+function updateRenderGeometry(){
+  const N=P.nrm;N.fill(0,0,P.n*3);
+  for(const b of bodies){
+    if(b.dead)continue;
+    const s=b.start;
+    for(let f=0;f<b.surf.length;f+=3){
+      const a=(s+b.surf[f])*3,c=(s+b.surf[f+1])*3,d=(s+b.surf[f+2])*3;
+      const e1x=P.pos[c]-P.pos[a],e1y=P.pos[c+1]-P.pos[a+1],e1z=P.pos[c+2]-P.pos[a+2];
+      const e2x=P.pos[d]-P.pos[a],e2y=P.pos[d+1]-P.pos[a+1],e2z=P.pos[d+2]-P.pos[a+2];
+      const nx=e1y*e2z-e1z*e2y,ny=e1z*e2x-e1x*e2z,nz=e1x*e2y-e1y*e2x; // area-weighted
+      N[a]+=nx;N[a+1]+=ny;N[a+2]+=nz;
+      N[c]+=nx;N[c+1]+=ny;N[c+2]+=nz;
+      N[d]+=nx;N[d+1]+=ny;N[d+2]+=nz;
+    }
+  }
+  for(let i=0;i<P.n;i++){
+    const o=i*3,l=Math.hypot(N[o],N[o+1],N[o+2]);
+    if(l>1e-9){N[o]/=l;N[o+1]/=l;N[o+2]/=l;}
+    const k=P.skin[i];
+    P.rpos[o]=P.pos[o]+N[o]*k;P.rpos[o+1]=P.pos[o+1]+N[o+1]*k;P.rpos[o+2]=P.pos[o+2]+N[o+2]*k;
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER,vboPos);gl.bufferSubData(gl.ARRAY_BUFFER,0,P.rpos.subarray(0,P.n*3));
+  gl.bindBuffer(gl.ARRAY_BUFFER,vboNrm);gl.bufferSubData(gl.ARRAY_BUFFER,0,P.nrm.subarray(0,P.n*3));
+}
+
+/* ---- presets ---- */
+const PAL=[[0.36,0.93,0.83],[0.76,0.53,0.99],[1.00,0.56,0.46],
+           [1.00,0.80,0.36],[0.42,0.71,1.00],[0.58,0.95,0.52]];
+const jitter=c=>{const k=0.88+0.24*rnd();return [c[0]*k,c[1]*k,c[2]*k];};
+
+function buildStack(){
+  cam.tx=0;cam.ty=1.6;cam.tz=0;cam.dist=12.5;
+  const box=latticeFromSDF((x,y,z)=>Math.max(Math.abs(x),Math.abs(y),Math.abs(z))-0.33,
+                           [-0.33,-0.33,-0.33],[0.33,0.33,0.33],0.33);
+  const surf=tetBoundary(box.tets);
+  let pi=0;
+  for(let ly=0;ly<4;ly++){
+    const m=4-ly,y=0.480+ly*0.962;
+    for(let i=0;i<m;i++)for(let j=0;j<m;j++){
+      const x=(i-(m-1)/2)*0.985+(rnd()-0.5)*0.015,
+            z=(j-(m-1)/2)*0.985+(rnd()-0.5)*0.015;
+      const c=PAL[pi++%PAL.length];
+      addBody({verts:transformVerts(box.verts,1,null,x,y,z),tets:box.tets,surf,
+        type:'rigid',mass:3,radius:0.149,skin:0.9,
+        baseColor:c,colorOf:()=>jitter(c)});
+    }
+  }
+  const ico=polyBody(icosahedron());
+  addBody({verts:transformVerts(ico.verts,0.5,null,0.3,1.8,7.5),
+    tets:ico.tets,surf:ico.surf,type:'rigid',mass:26,
+    radiusOf:k=>k===ico.centroid?0.34:0.16,skin:0,
+    baseColor:PAL[3],colorOf:()=>jitter(PAL[3]),
+    vel:[0,3.0,-16],angVel:[3,0,1]});
+}
+
+function buildBunny(){
+  cam.tx=0;cam.ty=1.8;cam.tz=0;cam.dist=10.5;
+  const lat=latticeFromSDF(bunnySDF,[-0.55,-0.02,-0.85],[0.55,1.66,0.80],0.14);
+  const q=quatAxisAngle(0.55,0,0.835,0.22,[0,0,0,1]);
+  const verts=transformVerts(lat.verts,1.55,q,0,2.55,0);
+  addBody({verts,tets:lat.tets,surf:tetBoundary(lat.tets),
+    type:'soft',mass:6,radius:0.105,skin:0.9,comp:1,
+    colorOf:(k,x,y,z)=>{                            // teal→violet by height
+      const t=clamp((y-2.55)/2.5,0,1),j=0.9+0.2*rnd();
+      return [(0.40+0.38*t)*j,(0.90-0.36*t)*j,(0.78+0.22*t)*j];},
+    vel:[0,-1.6,0],angVel:[0.4,1.1,0]});
+  const ballSdf=(x,y,z)=>Math.hypot(x,y,z)-0.38;
+  const ball=latticeFromSDF(ballSdf,[-0.40,-0.40,-0.40],[0.40,0.40,0.40],0.16);
+  addBody({verts:transformVerts(ball.verts,1,null,1.85,1.3,0.95),
+    tets:ball.tets,surf:tetBoundary(ball.tets),
+    type:'soft',mass:2,radius:0.075,skin:0.9,comp:1,
+    baseColor:PAL[2],colorOf:()=>jitter(PAL[2]),
+    vel:[-1.2,0,0]});
+}
+
+function buildChain(){
+  cam.tx=0;cam.ty=3.0;cam.tz=0;cam.dist=12.0;
+  const s=0.343,rr=Math.sqrt(8)/3*s;                // regular tet, edge ≈ 0.56
+  const linkVerts=cy=>{
+    const v=[0,cy+s,0];                             // apex (local index 0)
+    for(let a=0;a<3;a++){
+      const an=a*2*Math.PI/3+Math.PI/2;
+      v.push(Math.cos(an)*rr,cy-s/3,Math.sin(an)*rr);
+    }
+    return v;};
+  const N2=8;
+  let prevBody=null;
+  for(let k=0;k<N2;k++){
+    const cy=5.257-0.82*k,verts=linkVerts(cy);
+    // flip tet winding if volume came out negative so volume constraints stay positive
+    const tets=tetVol6(verts,0,1,2,3)<0?[0,1,3,2]:[0,1,2,3];
+    const c=k%2?PAL[1]:PAL[0];
+    const b=addBody({verts,tets,surf:tetBoundary(tets),
+      type:'soft',mass:1.2,radius:0.125,skin:0.55,comp:1,
+      baseColor:c,colorOf:()=>jitter(c),
+      pins:k===0?[0]:null,
+      linkPrev:prevBody?bodies.indexOf(prevBody):-1});
+    if(prevBody){
+      /* ball joint: apex of this link ↔ 3 base verts of the link above,
+         compliance 0 → stays rigid no matter the stiffness slider */
+      const apex=b.start;
+      for(let j=1;j<4;j++){
+        const base=prevBody.start+j;
+        const rest=Math.hypot(P.pos[apex*3]-P.pos[base*3],
+                              P.pos[apex*3+1]-P.pos[base*3+1],
+                              P.pos[apex*3+2]-P.pos[base*3+2]);
+        jointEdges.push([apex,base,rest,0]);
+      }
+    }
+    prevBody=b;
+  }
+  const ico=polyBody(icosahedron());
+  addBody({verts:transformVerts(ico.verts,0.5,null,4.6,3.5,0),
+    tets:ico.tets,surf:ico.surf,type:'rigid',mass:8,
+    radiusOf:k=>k===ico.centroid?0.34:0.16,skin:0,
+    baseColor:PAL[3],colorOf:()=>jitter(PAL[3]),
+    vel:[-8.5,1.4,0],angVel:[0,0,-4]});
+}
+
+function buildDestruction(){
+  cam.tx=0;cam.ty=2.4;cam.tz=0;cam.dist=14.0;
+  for(let k=0;k<5;k++){
+    const shape=polyBody(k%2?dodecahedron():icosahedron());
+    const si=0.7+rnd()*0.3,c=PAL[k%PAL.length];
+    const q=quatAxisAngle(rnd()-0.5,rnd()-0.5,rnd()-0.5,rnd()*6,[0,0,0,1]);quatNorm(q);
+    const x=-3.6+1.8*k,y=4.4+1.15*k+rnd()*0.6,z=(rnd()-0.5)*1.6;
+    addBody({verts:transformVerts(shape.verts,si,q,x,y,z),
+      tets:shape.tets,surf:shape.surf,type:'rigid',mass:8*si,
+      radiusOf:i2=>i2===shape.centroid?si*0.55:si*0.22,skin:0,
+      baseColor:c,colorOf:()=>jitter(c),
+      vel:[-x*0.35,0,-z*0.3],angVel:[(rnd()-0.5)*5,(rnd()-0.5)*5,(rnd()-0.5)*5],
+      breakable:true,breakSpeed:4.2,groups:shape.groups,shardR:si*0.12});
+  }
+}
+
+const PRESETS=[
+  ['Rigid Stack\nCollapse',buildStack],
+  ['Soft Bunny\nDrop',buildBunny],
+  ['Tetrahedral\nChain',buildChain],
+  ['Polyhedra\nDestruction',buildDestruction],
+];
+let currentPreset=1;
+function resetWorld(){
+  P.n=0;bodies=[];jointEdges=[];NE=NT=0;nSpark=0;
+  grab.i=-1;pendingBreak.clear();pairCount=0;contactCount=0;lastContacts=0;
+}
+function loadPreset(i){
+  currentPreset=i;resetWorld();srand(1234+i*7919);  // deterministic resets
+  PRESETS[i][1]();rebuildTopo();
+  document.querySelectorAll('#presets button').forEach((b,k)=>b.classList.toggle('on',k===i));
+  toast(PRESETS[i][0].replace('\n',' ').toUpperCase());
+}
+
+/* =====================================================================
+   8. CAMERA + INTERACTION
+   ---------------------------------------------------------------------
+   drag empty space → orbit · drag a body → grab & fling (the grab is a
+   real positional constraint inside the solver, so release velocity is
+   "earned" physically) · wheel → zoom · RMB / shift-drag → pan
+   ===================================================================== */
+const cam={yaw:0.65,pitch:0.40,dist:13.5,tx:0,ty:1.6,tz:0};
+const FOV=50*Math.PI/180;
+function camEye(){
+  const cp=Math.cos(cam.pitch),sp=Math.sin(cam.pitch);
+  return [cam.tx+Math.sin(cam.yaw)*cp*cam.dist,
+          cam.ty+sp*cam.dist,
+          cam.tz+Math.cos(cam.yaw)*cp*cam.dist];
+}
+function camBasis(){
+  const eye=camEye();
+  let fx=cam.tx-eye[0],fy=cam.ty-eye[1],fz=cam.tz-eye[2];
+  const fl=1/Math.hypot(fx,fy,fz);fx*=fl;fy*=fl;fz*=fl;
+  let rx=-fz,ry=0,rz=fx;                            // r = fwd × worldUp(0,1,0)
+  const rl=1/(Math.hypot(rx,ry,rz)||1);rx*=rl;rz*=rl;
+  const ux=ry*fz-rz*fy,uy=rz*fx-rx*fz,uz=rx*fy-ry*fx; // u = r × fwd
+  return {eye,f:[fx,fy,fz],r:[rx,ry,rz],u:[ux,uy,uz]};
+}
+function mouseRay(mx,my){
+  const B=camBasis(),w=canvas.clientWidth,h=canvas.clientHeight;
+  const nx=(mx/w)*2-1,ny=1-(my/h)*2,th=Math.tan(FOV/2),asp=w/h;
+  let dx=B.f[0]+B.r[0]*nx*th*asp+B.u[0]*ny*th,
+      dy=B.f[1]+B.r[1]*nx*th*asp+B.u[1]*ny*th,
+      dz=B.f[2]+B.r[2]*nx*th*asp+B.u[2]*ny*th;
+  const l=1/Math.hypot(dx,dy,dz);
+  return {ro:B.eye,rd:[dx*l,dy*l,dz*l],f:B.f};
+}
+function pickParticle(ro,rd){
+  let best=-1,bestT=1e9;
+  for(let i=0;i<P.n;i++){
+    if(P.w[i]<=0||P.r[i]<=0)continue;
+    const px=P.pos[i*3]-ro[0],py=P.pos[i*3+1]-ro[1],pz=P.pos[i*3+2]-ro[2];
+    const t=px*rd[0]+py*rd[1]+pz*rd[2];
+    if(t<0.4||t>bestT)continue;
+    const d2=px*px+py*py+pz*pz-t*t,lim=Math.max(0.16,P.r[i]*2.5);
+    if(d2<lim*lim){best=i;bestT=t;}
+  }
+  return {i:best,t:bestT};
+}
+let mode=0,lastX=0,lastY=0,grabDepth=0;             // 0 idle 1 orbit 2 pan 3 grab
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('pointerdown',e=>{
+  canvas.setPointerCapture(e.pointerId);
+  lastX=e.clientX;lastY=e.clientY;
+  if(e.button===2||e.shiftKey){mode=2;return;}
+  const {ro,rd,f}=mouseRay(e.clientX,e.clientY);
+  const hit=pickParticle(ro,rd);
+  if(hit.i>=0){
+    mode=3;grab.i=hit.i;
+    const i=hit.i;
+    grabDepth=(P.pos[i*3]-ro[0])*f[0]+(P.pos[i*3+1]-ro[1])*f[1]+(P.pos[i*3+2]-ro[2])*f[2];
+    grab.tx=P.pos[i*3];grab.ty=P.pos[i*3+1];grab.tz=P.pos[i*3+2];
+    canvas.style.cursor='grabbing';
+  }else mode=1;
+});
+canvas.addEventListener('pointermove',e=>{
+  const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;
+  if(mode===1){
+    cam.yaw-=dx*0.0055;
+    cam.pitch=clamp(cam.pitch+dy*0.0055,-0.12,1.45);
+  }else if(mode===2){
+    const B=camBasis(),k=cam.dist*0.0016;
+    cam.tx-=(B.r[0]*dx-B.u[0]*dy)*k;
+    cam.ty-=(B.r[1]*dx-B.u[1]*dy)*k;
+    cam.tz-=(B.r[2]*dx-B.u[2]*dy)*k;
+    cam.ty=clamp(cam.ty,0.2,12);
+  }else if(mode===3&&grab.i>=0){
+    const {ro,rd,f}=mouseRay(e.clientX,e.clientY);
+    const t=grabDepth/Math.max(rd[0]*f[0]+rd[1]*f[1]+rd[2]*f[2],0.05);
+    grab.tx=ro[0]+rd[0]*t;grab.ty=Math.max(ro[1]+rd[1]*t,0.06);grab.tz=ro[2]+rd[2]*t;
+  }
+});
+const endDrag=()=>{mode=0;grab.i=-1;canvas.style.cursor='';};
+canvas.addEventListener('pointerup',endDrag);
+canvas.addEventListener('pointercancel',endDrag);
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  cam.dist=clamp(cam.dist*Math.exp(e.deltaY*0.0011),3,40);
+},{passive:false});
+window.addEventListener('keydown',e=>{
+  if(e.code==='Space'){e.preventDefault();togglePause();}
+  else if(e.key==='r'||e.key==='R')loadPreset(currentPreset);
+  else if(e.key==='w'||e.key==='W')toggleWire();
+  else if(e.key==='h'||e.key==='H')togglePanel();
+  else if(e.key>='1'&&e.key<='4')loadPreset(+e.key-1);
+});
+
+/* =====================================================================
+   9. UI WIRING
+   ===================================================================== */
+const SLIDERS=[
+  ['gravity','gravity',0,25,0.1,9.8,v=>v.toFixed(1)],
+  ['stiffness','stiffness',0,1,0.01,0.8,v=>v.toFixed(2)],
+  ['damping','damping',0,1,0.01,0.08,v=>v.toFixed(2)],
+  ['speed','sim speed',0.1,2,0.05,1,v=>v.toFixed(2)+'×'],
+  ['rest','restitution',0,1,0.01,0.35,v=>v.toFixed(2)],
+  ['fric','friction',0,1,0.01,0.5,v=>v.toFixed(2)],
+];
+for(const [key,label,mn,mx,st,def,fmt] of SLIDERS){
+  const row=document.createElement('div');row.className='srow';
+  row.innerHTML='<div class="lab"><span>'+label+'</span><b></b></div>';
+  const inp=document.createElement('input');
+  inp.type='range';inp.min=mn;inp.max=mx;inp.step=st;inp.value=def;
+  const val=row.querySelector('b');val.textContent=fmt(def);
+  inp.addEventListener('input',()=>{sim[key]=+inp.value;val.textContent=fmt(+inp.value);});
+  row.appendChild(inp);$('sliders').appendChild(row);
+}
+PRESETS.forEach((p,i)=>{
+  const b=document.createElement('button');
+  b.textContent=p[0].replace('\n',' ');
+  b.addEventListener('click',()=>loadPreset(i));
+  $('presets').appendChild(b);
+});
+function togglePause(){
+  sim.paused=!sim.paused;
+  $('btnPlay').textContent=sim.paused?'▶ play':'⏸ pause';
+  $('btnPlay').classList.toggle('on',sim.paused);
+}
+function toggleWire(){
+  sim.wire=!sim.wire;$('btnWire').classList.toggle('on',sim.wire);
+}
+function togglePanel(){
+  $('ui').classList.toggle('hidden');
+  const hid=$('ui').classList.contains('hidden');
+  $('hidebtn').classList.toggle('shifted',hid);
+  $('hidebtn').textContent=hid?'⟩':'⟨';
+}
+$('btnPlay').addEventListener('click',togglePause);
+$('btnReset').addEventListener('click',()=>loadPreset(currentPreset));
+$('btnWire').addEventListener('click',toggleWire);
+$('hidebtn').addEventListener('click',togglePanel);
+let toastTimer=0;
+function toast(msg){
+  const t=$('toast');t.textContent=msg;t.style.opacity=1;
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.style.opacity=0,1500);
+}
+
+/* =====================================================================
+   10. MAIN LOOP — fixed-step physics accumulator + render passes
+   ===================================================================== */
+function resize(){
+  const dpr=Math.min(window.devicePixelRatio||1,1.75);
+  const w=Math.round(canvas.clientWidth*dpr),h=Math.round(canvas.clientHeight*dpr);
+  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
+}
+window.addEventListener('resize',resize);
+
+function render(){
+  resize();
+  const eye=camEye();
+  m4Persp(projM,FOV,canvas.width/canvas.height,0.1,140);
+  m4LookAt(viewM,eye[0],eye[1],eye[2],cam.tx,cam.ty,cam.tz,0,1,0);
+
+  /* -- pass 1: depth from the light (front faces culled vs. acne) -- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFBO);
+  gl.viewport(0,0,SHADOW_RES,SHADOW_RES);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.FRONT);
+  if(triCount){
+    gl.useProgram(progDepth);
+    gl.uniformMatrix4fv(progDepth.u.uMVP,false,lightVP);
+    gl.bindVertexArray(vaoDepth);
+    gl.drawElements(gl.TRIANGLES,triCount,gl.UNSIGNED_INT,0);
+  }
+
+  /* -- pass 2: main scene -- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.clearColor(0.02,0.022,0.05,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,shadowTex);
+
+  gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);   // sky
+  gl.useProgram(progSky);gl.bindVertexArray(vaoSky);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.enable(gl.DEPTH_TEST);
+
+  gl.useProgram(progGround);                            // floor
+  gl.uniformMatrix4fv(progGround.u.uProj,false,projM);
+  gl.uniformMatrix4fv(progGround.u.uView,false,viewM);
+  gl.uniformMatrix4fv(progGround.u.uLightVP,false,lightVPB);
+  gl.uniform3fv(progGround.u.uEye,eye);
+  gl.uniform3fv(progGround.u.uLightDir,LIGHT_DIR);
+  gl.uniform1i(progGround.u.uShadow,0);
+  gl.bindVertexArray(vaoGround);
+  gl.drawArrays(gl.TRIANGLES,0,6);
+
+  if(triCount){                                         // bodies
+    gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
+    gl.useProgram(progMesh);
+    gl.uniformMatrix4fv(progMesh.u.uProj,false,projM);
+    gl.uniformMatrix4fv(progMesh.u.uView,false,viewM);
+    gl.uniformMatrix4fv(progMesh.u.uLightVP,false,lightVPB);
+    gl.uniform3fv(progMesh.u.uEye,eye);
+    gl.uniform3fv(progMesh.u.uLightDir,LIGHT_DIR);
+    gl.uniform1i(progMesh.u.uShadow,0);
+    gl.uniform1f(progMesh.u.uWire,0);
+    gl.bindVertexArray(vaoMesh);
+    gl.drawElements(gl.TRIANGLES,triCount,gl.UNSIGNED_INT,0);
+    if(sim.wire&&lineCount){
+      gl.disable(gl.CULL_FACE);
+      gl.uniform1f(progMesh.u.uWire,1);
+      gl.bindVertexArray(vaoWire);
+      gl.drawElements(gl.LINES,lineCount,gl.UNSIGNED_INT,0);
+    }
+    gl.disable(gl.CULL_FACE);
+  }
+
+  if(nSpark){                                           // additive sparks
+    gl.bindBuffer(gl.ARRAY_BUFFER,vboSpark);
+    gl.bufferSubData(gl.ARRAY_BUFFER,0,sparkBuf.subarray(0,nSpark*7));
+    gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE);gl.depthMask(false);
+    gl.useProgram(progSpark);
+    gl.uniformMatrix4fv(progSpark.u.uProj,false,projM);
+    gl.uniformMatrix4fv(progSpark.u.uView,false,viewM);
+    gl.uniform1f(progSpark.u.uScale,canvas.height/13);
+    gl.bindVertexArray(vaoSpark);
+    gl.drawArrays(gl.POINTS,0,nSpark);
+    gl.depthMask(true);gl.disable(gl.BLEND);
+  }
+  gl.bindVertexArray(null);
+}
+
+let last=performance.now(),acc=0,fpsE=60,fpsClock=0,physMs=0;
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt=(now-last)/1000;last=now;
+  dt=Math.min(dt,0.05);
+  fpsE+=(1/Math.max(dt,1e-4)-fpsE)*0.07;
+  if(!sim.paused){
+    acc+=dt*sim.speed;
+    let it=0;const t0=performance.now();
+    while(acc>=DT&&it<3){physStep();acc-=DT;it++;}    // ≤3 catch-up steps
+    if(it===3)acc=0;                                  // spiral-of-death guard
+    physMs=physMs*0.9+(performance.now()-t0)*0.1;
+    updateSparks(dt*sim.speed);
+  }
+  updateRenderGeometry();
+  render();
+  fpsClock+=dt;
+  if(fpsClock>0.25){
+    fpsClock=0;
+    $('fps').textContent=Math.round(fpsE);
+    let alive=0;for(const b of bodies)if(!b.dead)alive++;
+    $('stats').textContent=P.n+' pts · '+NT+' tets · '+NE+' springs · '
+      +alive+' bodies · '+lastContacts+' contacts · '+physMs.toFixed(1)+' ms';
+  }
+}
+
+/* ---- boot ---- */
+loadPreset(1);                                        // Soft Bunny Drop
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,2299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Physics Simulation - Complex Geometry</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --panel-bg: rgba(20, 20, 40, 0.92);
+            --text: #e0e0e0;
+            --accent: #ff6b6b;
+            --accent2: #4ecdc4;
+            --slider-track: #333;
+            --button: #2a2a4a;
+            --button-hover: #3a3a5a;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            overflow: hidden;
+            font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
+            height: 100vh;
+            width: 100vw;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            cursor: grab;
+        }
+        body.dragging {
+            cursor: grabbing;
+        }
+        body.throwing {
+            cursor: pointer;
+        }
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        #ui-panel {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: var(--panel-bg);
+            border-radius: 14px;
+            padding: 18px 20px;
+            color: var(--text);
+            font-size: 13px;
+            z-index: 10;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            min-width: 240px;
+            max-width: 280px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            transition: opacity 0.3s;
+        }
+        #ui-panel h3 {
+            margin: 0 0 12px;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+            color: #fff;
+            text-align: center;
+        }
+        #ui-panel label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 7px 0;
+            font-size: 12px;
+            color: #ccc;
+        }
+        #ui-panel input[type="range"] {
+            width: 100px;
+            accent-color: var(--accent2);
+            height: 6px;
+            cursor: pointer;
+        }
+        #ui-panel .btn-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 10px 0 6px;
+        }
+        #ui-panel button {
+            flex: 1;
+            min-width: 60px;
+            padding: 8px 6px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 8px;
+            background: var(--button);
+            color: #ddd;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        #ui-panel button:hover {
+            background: var(--button-hover);
+            border-color: rgba(255, 255, 255, 0.35);
+            color: #fff;
+        }
+        #ui-panel button.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+            box-shadow: 0 0 12px rgba(255, 107, 107, 0.4);
+        }
+        #fps-display {
+            text-align: center;
+            font-size: 11px;
+            color: #aaa;
+            margin-top: 8px;
+            font-variant-numeric: tabular-nums;
+            font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+        }
+        #instructions {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.55);
+            font-size: 11px;
+            text-align: center;
+            pointer-events: none;
+            z-index: 5;
+            letter-spacing: 0.2px;
+        }
+        @media (max-width: 600px) {
+            #ui-panel {
+                top: 8px;
+                right: 4px;
+                padding: 12px 14px;
+                font-size: 11px;
+                min-width: 200px;
+                max-width: 240px;
+                border-radius: 10px;
+            }
+            #ui-panel h3 {
+                font-size: 13px;
+                margin-bottom: 8px;
+            }
+            #ui-panel label {
+                font-size: 10px;
+                margin: 4px 0;
+            }
+            #ui-panel input[type="range"] {
+                width: 70px;
+            }
+            #ui-panel button {
+                font-size: 10px;
+                padding: 6px 4px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="ui-panel">
+        <h3>🔬 Physics Lab</h3>
+        <label>Gravity <input type="range" id="gravity" min="0" max="30" value="12" step="0.5"><span id="gravVal">9.8</span></label>
+        <label>Stiffness <input type="range" id="stiffness" min="10" max="200" value="80" step="1"><span id="stiffVal">80</span></label>
+        <label>Damping <input type="range" id="damping" min="1" max="30" value="8" step="0.5"><span id="dampVal">4.0</span></label>
+        <div class="btn-row">
+            <button id="btnRigid" class="active">🏗️ Rigid Collapse</button>
+            <button id="btnSoft">🫠 Soft Deform</button>
+        </div>
+        <div class="btn-row">
+            <button id="btnDestruct">💥 Destruction</button>
+            <button id="btnRagdoll">🧍 Ragdoll</button>
+        </div>
+        <div class="btn-row">
+            <button id="btnPause">⏯️ Pause</button>
+            <button id="btnWireframe">🔍 Wireframe</button>
+            <button id="btnReset">🔄 Reset</button>
+        </div>
+        <div id="fps-display">FPS: --</div>
+    </div>
+    <div id="instructions">🖱️ Drag to orbit &nbsp;|&nbsp; Scroll to zoom &nbsp;|&nbsp; Click objects to throw &nbsp;|&nbsp; Right-drag to pan</div>
+
+    <script>
+        // ===========================================================================
+        //  COMPLETE 3D PHYSICS SIMULATION WITH COMPLEX GEOMETRY (WebGL2)
+        //  Features: Rigid bodies, soft bodies, ragdoll, convex polyhedra collision,
+        //  SAT collision detection, shadow mapping, particle impacts, wireframe mode
+        // ===========================================================================
+
+        (function() {
+            "use strict";
+
+            // ──────────────────────────────────────────────
+            //  DOM REFERENCES
+            // ──────────────────────────────────────────────
+            const canvas = document.getElementById('canvas');
+            const gl = canvas.getContext('webgl2', {
+                antialias: true,
+                alpha: false,
+                premultipliedAlpha: false,
+                preserveDrawingBuffer: false
+            });
+            if (!gl) {
+                document.body.innerHTML =
+                    '<div style="color:white;text-align:center;padding-top:40vh;font-size:20px;">WebGL2 not supported. Please use a modern browser.</div>';
+                return;
+            }
+
+            // ──────────────────────────────────────────────
+            //  MATH UTILITIES (Vec3, Mat4, Quaternion)
+            // ──────────────────────────────────────────────
+            const EPSILON = 1e-8;
+            const PI = Math.PI;
+            const TWO_PI = 2 * PI;
+            const HALF_PI = PI / 2;
+
+            function vec3(x, y, z) { return [x, y, z]; }
+
+            function v3Add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+
+            function v3Sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+
+            function v3Scale(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
+
+            function v3Dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+
+            function v3Cross(a, b) { return [a[1] * b[1] - a[2] * b[0], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[
+                    0]]; }
+
+            function v3Len(a) { return Math.sqrt(v3Dot(a, a)); }
+
+            function v3Normalize(a) { const l = v3Len(a); return l > EPSILON ? v3Scale(a, 1 / l) : [0, 1, 0]; }
+
+            function v3Lerp(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) *
+                t
+            ]; }
+
+            function v3Dist(a, b) { return v3Len(v3Sub(a, b)); }
+
+            function v3Neg(a) { return [-a[0], -a[1], -a[2]]; }
+
+            function m4Identity() { return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; }
+
+            function m4Multiply(a, b) {
+                const r = new Array(16);
+                for (let i = 0; i < 4; i++)
+                    for (let j = 0; j < 4; j++) { r[i + j * 4] = a[i] * b[j * 4] + a[i + 4] * b[1 + j * 4] + a[i + 8] * b[2 + j *
+                            4
+                        ] + a[i + 12] * b[3 + j * 4]; }
+                return r;
+            }
+
+            function m4Translate(tx, ty, tz) {
+                const m = m4Identity();
+                m[12] = tx;
+                m[13] = ty;
+                m[14] = tz;
+                return m;
+            }
+
+            function m4Scale(sx, sy, sz) {
+                const m = m4Identity();
+                m[0] = sx;
+                m[5] = sy;
+                m[10] = sz;
+                return m;
+            }
+
+            function m4RotateX(a) {
+                const m = m4Identity();
+                const c = Math.cos(a),
+                    s = Math.sin(a);
+                m[5] = c;
+                m[6] = s;
+                m[9] = -s;
+                m[10] = c;
+                return m;
+            }
+
+            function m4RotateY(a) {
+                const m = m4Identity();
+                const c = Math.cos(a),
+                    s = Math.sin(a);
+                m[0] = c;
+                m[2] = -s;
+                m[8] = s;
+                m[10] = c;
+                return m;
+            }
+
+            function m4RotateZ(a) {
+                const m = m4Identity();
+                const c = Math.cos(a),
+                    s = Math.sin(a);
+                m[0] = c;
+                m[1] = s;
+                m[4] = -s;
+                m[5] = c;
+                return m;
+            }
+
+            function m4FromQuat(q) {
+                const x = q[0],
+                    y = q[1],
+                    z = q[2],
+                    w = q[3];
+                const xx = x * x,
+                    yy = y * y,
+                    zz = z * z;
+                const xy = x * y,
+                    xz = x * z,
+                    yz = y * z,
+                    wx = w * x,
+                    wy = w * y,
+                    wz = w * z;
+                return [
+                    1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy), 0,
+                    2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx), 0,
+                    2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy), 0,
+                    0, 0, 0, 1
+                ];
+            }
+
+            function m4Inverse(m) {
+                const inv = new Array(16);
+                const a = m[0],
+                    b = m[1],
+                    c = m[2],
+                    d = m[3];
+                const e = m[4],
+                    f = m[5],
+                    g = m[6],
+                    h = m[7];
+                const i = m[8],
+                    j = m[9],
+                    k = m[10],
+                    l = m[11];
+                const M = m[12],
+                    n = m[13],
+                    o = m[14],
+                    p = m[15];
+                const A = k * p - l * o,
+                    B = j * p - l * n,
+                    C = j * o - k * n;
+                const D = i * p - l * m,
+                    E = i * o - k * m,
+                    F = i * n - j * m;
+                const G = g * p - h * o,
+                    H = f * p - h * n,
+                    I = f * o - g * n;
+                const J = e * p - h * m,
+                    K = e * o - g * m,
+                    L = e * n - f * m;
+                const det = a * (f * A - g * B + h * C) - b * (e * A - g * D + h * E) + c * (e * B - f * D + h * F) - d * (e *
+                    C - f * E + g * F);
+                if (Math.abs(det) < EPSILON) return m4Identity();
+                const id = 1 / det;
+                inv[0] = (f * A - g * B + h * C) * id;
+                inv[1] = -(b * A - c * B + d * C) * id;
+                inv[2] = (b * G - c * H + d * I) * id;
+                inv[3] = -(b * (g * l - h * k) - c * (f * l - h * j) + d * (f * k - g * j)) * id;
+                inv[4] = -(e * A - g * D + h * E) * id;
+                inv[5] = (a * A - c * D + d * E) * id;
+                inv[6] = -(a * G - c * J + d * K) * id;
+                inv[7] = (a * (g * l - h * k) - c * (e * l - h * i) + d * (e * k - g * i)) * id;
+                inv[8] = (e * B - f * D + h * F) * id;
+                inv[9] = -(a * B - b * D + d * F) * id;
+                inv[10] = (a * H - b * J + d * L) * id;
+                inv[11] = -(a * (f * l - h * j) - b * (e * l - h * i) + d * (e * j - f * i)) * id;
+                inv[12] = -(e * C - f * E + g * F) * id;
+                inv[13] = (a * C - b * E + c * F) * id;
+                inv[14] = -(a * I - b * K + c * L) * id;
+                inv[15] = (a * (f * k - g * j) - b * (e * k - g * i) + c * (e * j - f * i)) * id;
+                return inv;
+            }
+
+            function m4LookAt(eye, target, up) {
+                const z = v3Normalize(v3Sub(eye, target));
+                const x = v3Normalize(v3Cross(up, z));
+                const y = v3Cross(z, x);
+                return [
+                    x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0,
+                    -v3Dot(x, eye), -v3Dot(y, eye), -v3Dot(z, eye), 1
+                ];
+            }
+
+            function m4Perspective(fov, aspect, near, far) {
+                const f = 1 / Math.tan(fov / 2);
+                const nf = 1 / (near - far);
+                return [
+                    f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0
+                ];
+            }
+
+            function m4Ortho(l, r, b, t, n, f) {
+                return [
+                    2 / (r - l), 0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, -2 / (f - n), 0,
+                    -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), 1
+                ];
+            }
+
+            function quatIdentity() { return [0, 0, 0, 1]; }
+
+            function quatFromAxisAngle(axis, angle) {
+                const ha = angle * 0.5;
+                const s = Math.sin(ha);
+                return [axis[0] * s, axis[1] * s, axis[2] * s, Math.cos(ha)];
+            }
+
+            function quatMultiply(a, b) {
+                return [
+                    a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+                    a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+                    a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+                    a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]
+                ];
+            }
+
+            function quatRotate(q, v) {
+                const qv = [q[0], q[1], q[2]];
+                const uv = v3Cross(qv, v);
+                const uuv = v3Cross(qv, uv);
+                return v3Add(v, v3Add(v3Scale(uv, 2 * q[3]), v3Scale(uuv, 2)));
+            }
+
+            function quatNormalize(q) {
+                const l = Math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+                return l > EPSILON ? [q[0] / l, q[1] / l, q[2] / l, q[3] / l] : [0, 0, 0, 1];
+            }
+
+            // ──────────────────────────────────────────────
+            //  WEBGL2 HELPERS
+            // ──────────────────────────────────────────────
+            function createShader(gl, type, source) {
+                const shader = gl.createShader(type);
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+                    gl.deleteShader(shader);
+                    return null;
+                }
+                return shader;
+            }
+
+            function createProgram(gl, vsSource, fsSource) {
+                const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
+                const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+                if (!vs || !fs) return null;
+                const prog = gl.createProgram();
+                gl.attachShader(prog, vs);
+                gl.attachShader(prog, fs);
+                gl.linkProgram(prog);
+                if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                    console.error('Program link error:', gl.getProgramInfoLog(prog));
+                    return null;
+                }
+                gl.deleteShader(vs);
+                gl.deleteShader(fs);
+                return prog;
+            }
+
+            function createVAO(gl, vertices, indices, attribs) {
+                const vao = gl.createVertexArray();
+                gl.bindVertexArray(vao);
+                const vbo = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+                for (const attr of attribs) {
+                    gl.enableVertexAttribArray(attr.location);
+                    gl.vertexAttribPointer(attr.location, attr.size, gl.FLOAT, false, attr.stride, attr.offset);
+                }
+                if (indices) {
+                    const ibo = gl.createBuffer();
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+                    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+                    vao.indexCount = indices.length;
+                    vao.hasIndex = true;
+                } else {
+                    vao.vertexCount = vertices.length / (attribs[0]?.stride / 4 || 3);
+                    vao.hasIndex = false;
+                }
+                gl.bindVertexArray(null);
+                return vao;
+            }
+
+            // ──────────────────────────────────────────────
+            //  SHADER SOURCES
+            // ──────────────────────────────────────────────
+            const SHADOW_VS = `#version 300 es
+        precision highp float;
+        layout(location=0) in vec3 aPos;
+        uniform mat4 uLightMVP;
+        void main(){ gl_Position = uLightMVP * vec4(aPos,1.0); }`;
+
+            const SHADOW_FS = `#version 300 es
+        precision highp float;
+        out vec4 fragColor;
+        void main(){ fragColor = vec4(gl_FragCoord.z); }`;
+
+            const MAIN_VS = `#version 300 es
+        precision highp float;
+        layout(location=0) in vec3 aPos;
+        layout(location=1) in vec3 aNormal;
+        uniform mat4 uMVP;
+        uniform mat4 uModel;
+        uniform mat4 uLightMVP;
+        uniform vec3 uLightDir;
+        out vec3 vWorldPos;
+        out vec3 vNormal;
+        out vec4 vShadowCoord;
+        out float vNdotL;
+        void main(){
+            vec4 worldPos = uModel * vec4(aPos,1.0);
+            vWorldPos = worldPos.xyz;
+            vNormal = normalize(mat3(uModel) * aNormal);
+            vShadowCoord = uLightMVP * worldPos;
+            vNdotL = max(dot(vNormal, normalize(-uLightDir)), 0.0);
+            gl_Position = uMVP * worldPos;
+        }`;
+
+            const MAIN_FS = `#version 300 es
+        precision highp float;
+        in vec3 vWorldPos;
+        in vec3 vNormal;
+        in vec4 vShadowCoord;
+        in float vNdotL;
+        uniform vec3 uLightDir;
+        uniform vec3 uViewPos;
+        uniform vec3 uColor;
+        uniform float uAmbient;
+        uniform sampler2D uShadowMap;
+        uniform float uShininess;
+        out vec4 fragColor;
+
+        float shadowSample(vec3 projCoords, float bias){
+            if(projCoords.z > 1.0) return 1.0;
+            float depth = texture(uShadowMap, projCoords.xy).r;
+            float shadow = 0.0;
+            vec2 texelSize = vec2(1.0/1024.0);
+            for(int x=-1; x<=1; x++){
+                for(int y=-1; y<=1; y++){
+                    float pcf = texture(uShadowMap, projCoords.xy + vec2(x,y)*texelSize).r;
+                    shadow += (projCoords.z - bias) > pcf ? 0.4 : 1.0;
+                }
+            }
+            return shadow/9.0;
+        }
+
+        void main(){
+            vec3 N = normalize(vNormal);
+            vec3 L = normalize(-uLightDir);
+            vec3 V = normalize(uViewPos - vWorldPos);
+            vec3 H = normalize(L+V);
+            float NdotL = max(dot(N,L),0.0);
+            float NdotH = max(dot(N,H),0.0);
+            vec3 ambient = uColor * uAmbient;
+            vec3 diffuse = uColor * NdotL * 0.85;
+            vec3 specular = vec3(0.9) * pow(NdotH, uShininess) * 0.5;
+
+            vec3 projCoords = (vShadowCoord.xyz / vShadowCoord.w) * 0.5 + 0.5;
+            float shadow = shadowSample(projCoords, 0.002);
+            float s = mix(0.35, 1.0, shadow);
+
+            vec3 color = ambient + (diffuse + specular) * s;
+            color = pow(color, vec3(1.0/2.2));
+            fragColor = vec4(color, 1.0);
+        }`;
+
+            const WIRE_VS = `#version 300 es
+        precision highp float;
+        layout(location=0) in vec3 aPos;
+        uniform mat4 uMVP;
+        void main(){ gl_Position = uMVP * vec4(aPos,1.0); }`;
+
+            const WIRE_FS = `#version 300 es
+        precision highp float;
+        uniform vec3 uWireColor;
+        out vec4 fragColor;
+        void main(){ fragColor = vec4(uWireColor, 1.0); }`;
+
+            const PARTICLE_VS = `#version 300 es
+        precision highp float;
+        layout(location=0) in vec3 aPos;
+        layout(location=1) in float aSize;
+        layout(location=2) in float aAlpha;
+        uniform mat4 uVP;
+        uniform mat4 uView;
+        out float vAlpha;
+        void main(){
+            vec4 viewPos = uView * vec4(aPos,1.0);
+            gl_Position = uVP * vec4(aPos,1.0);
+            gl_PointSize = aSize * (40.0 / -viewPos.z);
+            vAlpha = aAlpha;
+        }`;
+
+            const PARTICLE_FS = `#version 300 es
+        precision highp float;
+        in float vAlpha;
+        uniform vec3 uParticleColor;
+        out vec4 fragColor;
+        void main(){
+            float d = length(gl_PointCoord - 0.5) * 2.0;
+            float alpha = smoothstep(1.0, 0.0, d) * vAlpha;
+            if(alpha < 0.01) discard;
+            fragColor = vec4(uParticleColor, alpha);
+        }`;
+
+            const GROUND_VS = `#version 300 es
+        precision highp float;
+        layout(location=0) in vec3 aPos;
+        uniform mat4 uMVP;
+        uniform mat4 uLightMVP;
+        out vec4 vShadowCoord;
+        out vec3 vWorldPos;
+        void main(){
+            vec4 wp = vec4(aPos,1.0);
+            vWorldPos = wp.xyz;
+            vShadowCoord = uLightMVP * wp;
+            gl_Position = uMVP * wp;
+        }`;
+
+            const GROUND_FS = `#version 300 es
+        precision highp float;
+        in vec4 vShadowCoord;
+        in vec3 vWorldPos;
+        uniform vec3 uViewPos;
+        uniform sampler2D uShadowMap;
+        out vec4 fragColor;
+
+        float shadowSample(vec3 projCoords, float bias){
+            if(projCoords.z>1.0) return 1.0;
+            float depth=texture(uShadowMap,projCoords.xy).r;
+            float shadow=0.0;
+            vec2 ts=vec2(1.0/1024.0);
+            for(int x=-1;x<=1;x++)for(int y=-1;y<=1;y++)
+                shadow+=(projCoords.z-bias)>texture(uShadowMap,projCoords.xy+vec2(x,y)*ts).r?0.4:1.0;
+            return shadow/9.0;
+        }
+
+        void main(){
+            vec3 col = vec3(0.22,0.24,0.28);
+            float grid = abs(fract(vWorldPos.x*0.5)-0.5)*2.0;
+            float grid2 = abs(fract(vWorldPos.z*0.5)-0.5)*2.0;
+            float g = smoothstep(0.92,1.0,grid)*smoothstep(0.92,1.0,grid2);
+            col = mix(col, vec3(0.32,0.34,0.38), g*0.4);
+            vec3 projCoords=(vShadowCoord.xyz/vShadowCoord.w)*0.5+0.5;
+            float s=mix(0.4,1.0,shadowSample(projCoords,0.003));
+            col*=s;
+            col=pow(col,vec3(1.0/2.2));
+            fragColor=vec4(col,1.0);
+        }`;
+
+            // ──────────────────────────────────────────────
+            //  COMPILE SHADER PROGRAMS
+            // ──────────────────────────────────────────────
+            const shadowProg = createProgram(gl, SHADOW_VS, SHADOW_FS);
+            const mainProg = createProgram(gl, MAIN_VS, MAIN_FS);
+            const wireProg = createProgram(gl, WIRE_VS, WIRE_FS);
+            const particleProg = createProgram(gl, PARTICLE_VS, PARTICLE_FS);
+            const groundProg = createProgram(gl, GROUND_VS, GROUND_FS);
+
+            // ──────────────────────────────────────────────
+            //  SHADOW MAP SETUP (1024x1024 depth texture)
+            // ──────────────────────────────────────────────
+            const SHADOW_SIZE = 1024;
+            const shadowFBO = gl.createFramebuffer();
+            const shadowTex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, shadowTex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT32F, SHADOW_SIZE, SHADOW_SIZE, 0, gl.DEPTH_COMPONENT, gl.FLOAT,
+                null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.NONE);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFBO);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shadowTex, 0);
+            gl.drawBuffers([gl.NONE]);
+            gl.readBuffer(gl.NONE);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+            // ──────────────────────────────────────────────
+            //  CAMERA STATE
+            // ──────────────────────────────────────────────
+            let camera = {
+                theta: Math.PI * 0.35, // azimuthal angle
+                phi: Math.PI * 0.28, // polar angle (from horizontal)
+                radius: 22,
+                target: [0, 5, 0],
+                up: [0, 1, 0],
+                fov: 45 * Math.PI / 180,
+                near: 0.5,
+                far: 120
+            };
+
+            function getCameraEye() {
+                const x = camera.target[0] + camera.radius * Math.cos(camera.phi) * Math.cos(camera.theta);
+                const y = camera.target[1] + camera.radius * Math.sin(camera.phi);
+                const z = camera.target[2] + camera.radius * Math.cos(camera.phi) * Math.sin(camera.theta);
+                return [x, y, z];
+            }
+
+            // ──────────────────────────────────────────────
+            //  LIGHT SETUP
+            // ──────────────────────────────────────────────
+            const lightDir = v3Normalize([-0.6, -1.2, -0.9]);
+            const lightUp = [0, 1, 0];
+            const lightDistance = 35;
+            const lightTarget = [0, 4, 0];
+            const lightPos = v3Add(lightTarget, v3Scale(lightDir, -lightDistance));
+
+            // ──────────────────────────────────────────────
+            //  GEOMETRY GENERATORS (convex polyhedra)
+            // ──────────────────────────────────────────────
+
+            /** Generate a unit cube centered at origin */
+            function generateCube() {
+                const s = 0.5;
+                const verts = [
+                    [-s, -s, -s],
+                    [s, -s, -s],
+                    [s, s, -s],
+                    [-s, s, -s],
+                    [-s, -s, s],
+                    [s, -s, s],
+                    [s, s, s],
+                    [-s, s, s]
+                ];
+                const faces = [
+                    [0, 1, 2, 3],
+                    [4, 7, 6, 5],
+                    [0, 4, 5, 1],
+                    [1, 5, 6, 2],
+                    [2, 6, 7, 3],
+                    [3, 7, 4, 0]
+                ];
+                return buildPolyhedron(verts, faces);
+            }
+
+            /** Generate a regular tetrahedron */
+            function generateTetrahedron() {
+                const a = 1 / Math.sqrt(3);
+                const verts = [
+                    [a, a, a],
+                    [-a, -a, a],
+                    [-a, a, -a],
+                    [a, -a, -a]
+                ];
+                const faces = [
+                    [0, 1, 2],
+                    [0, 3, 1],
+                    [0, 2, 3],
+                    [1, 3, 2]
+                ];
+                return buildPolyhedron(verts, faces);
+            }
+
+            /** Generate a regular octahedron */
+            function generateOctahedron() {
+                const verts = [
+                    [1, 0, 0],
+                    [-1, 0, 0],
+                    [0, 1, 0],
+                    [0, -1, 0],
+                    [0, 0, 1],
+                    [0, 0, -1]
+                ];
+                const faces = [
+                    [0, 2, 4],
+                    [0, 4, 3],
+                    [0, 3, 5],
+                    [0, 5, 2],
+                    [1, 4, 2],
+                    [1, 3, 4],
+                    [1, 5, 3],
+                    [1, 2, 5]
+                ];
+                return buildPolyhedron(verts, faces);
+            }
+
+            /** Generate a regular dodecahedron */
+            function generateDodecahedron() {
+                const phi = (1 + Math.sqrt(5)) / 2;
+                const iphi = 1 / phi;
+                const verts = [];
+                // 8 vertices at (±1,±1,±1)
+                for (let x = -1; x <= 1; x += 2)
+                    for (let y = -1; y <= 1; y += 2)
+                        for (let z = -1; z <= 1; z += 2) verts.push([x, y, z]);
+                // 4 vertices at (0, ±1/φ, ±φ)
+                for (let y = -1; y <= 1; y += 2)
+                    for (let z = -1; z <= 1; z += 2) verts.push([0, y * iphi, z * phi]);
+                // 4 vertices at (±1/φ, ±φ, 0)
+                for (let x = -1; x <= 1; x += 2)
+                    for (let y = -1; y <= 1; y += 2) verts.push([x * iphi, y * phi, 0]);
+                // 4 vertices at (±φ, 0, ±1/φ)
+                for (let x = -1; x <= 1; x += 2)
+                    for (let z = -1; z <= 1; z += 2) verts.push([x * phi, 0, z * iphi]);
+                // Normalize to unit sphere then scale
+                const scaled = verts.map(v => v3Scale(v3Normalize(v), 1.0));
+                // Compute convex hull faces
+                const hull = computeConvexHull(scaled);
+                return buildPolyhedron(hull.vertices, hull.faces);
+            }
+
+            /** Generate an icosahedron */
+            function generateIcosahedron() {
+                const phi = (1 + Math.sqrt(5)) / 2;
+                const verts = [
+                    [0, 1, phi],
+                    [0, -1, phi],
+                    [0, 1, -phi],
+                    [0, -1, -phi],
+                    [1, phi, 0],
+                    [-1, phi, 0],
+                    [1, -phi, 0],
+                    [-1, -phi, 0],
+                    [phi, 0, 1],
+                    [-phi, 0, 1],
+                    [phi, 0, -1],
+                    [-phi, 0, -1]
+                ];
+                const scaled = verts.map(v => v3Scale(v3Normalize(v), 1.0));
+                const faces = [
+                    [0, 4, 8],
+                    [0, 8, 1],
+                    [0, 1, 9],
+                    [0, 9, 5],
+                    [0, 5, 4],
+                    [3, 8, 4],
+                    [3, 4, 10],
+                    [3, 10, 6],
+                    [3, 6, 8],
+                    [2, 5, 9],
+                    [2, 9, 7],
+                    [2, 7, 11],
+                    [2, 11, 10],
+                    [2, 10, 4],
+                    [2, 4, 5],
+                    [1, 8, 6],
+                    [1, 6, 7],
+                    [1, 7, 9],
+                    [3, 11, 7],
+                    [3, 6, 10],
+                    [3, 10, 11]
+                ];
+                const usedVerts = [...new Set(faces.flat())].sort((a, b) => a - b);
+                const vMap = {};
+                usedVerts.forEach((vi, i) => vMap[vi] = i);
+                const newVerts = usedVerts.map(i => scaled[i]);
+                const newFaces = faces.map(f => f.map(i => vMap[i]));
+                return buildPolyhedron(newVerts, newFaces);
+            }
+
+            /** Generate a "bunny-like" convex shape by deforming a sphere and taking convex hull */
+            function generateBunnyShape() {
+                const points = [];
+                // Generate points on a sphere with deformations
+                const nSamples = 200;
+                for (let i = 0; i < nSamples; i++) {
+                    // Use Fibonacci sphere for uniform distribution
+                    const phi_ = Math.acos(1 - 2 * (i + 0.5) / nSamples);
+                    const theta_ = Math.PI * (1 + Math.sqrt(5)) * i;
+                    let x = Math.sin(phi_) * Math.cos(theta_);
+                    let y = Math.cos(phi_);
+                    let z = Math.sin(phi_) * Math.sin(theta_);
+                    // Deform: add ear bumps at top
+                    const earInfluence = Math.max(0, (y - 0.3) / 0.7);
+                    const earX = Math.abs(x) > 0.15 ? Math.sign(x) * Math.exp(-Math.abs(x - Math.sign(x) * 0.35) * 3) * 0.5 :
+                        0;
+                    x += earX * earInfluence * 0.8;
+                    if (y > 0.2 && Math.abs(x) < 0.5) y += earInfluence * 0.5;
+                    // Snout bump at front
+                    const snoutInfluence = Math.max(0, (z - 0.3)) * Math.max(0, (1 - Math.abs(x))) * Math.max(0, (0.6 - Math
+                        .abs(y - 0.1)));
+                    z += snoutInfluence * 0.45;
+                    // Normalize and add some noise
+                    const r = v3Len([x, y, z]);
+                    const base = [x / r, y / r, z / r];
+                    const rr = 0.85 + 0.15 * Math.sin(x * 5) * Math.cos(z * 5) * Math.cos(y * 4);
+                    points.push(v3Scale(base, rr));
+                }
+                const hull = computeConvexHull(points);
+                return buildPolyhedron(hull.vertices, hull.faces);
+            }
+
+            /** Build a polyhedron data structure from vertices and face indices */
+            function buildPolyhedron(verts, faces) {
+                // Ensure CCW winding and compute face normals
+                const processedFaces = [];
+                const faceNormals = [];
+                for (const face of faces) {
+                    const a = verts[face[0]];
+                    const b = verts[face[1]];
+                    const c = verts[face[2]];
+                    const ab = v3Sub(b, a);
+                    const ac = v3Sub(c, a);
+                    const n = v3Cross(ab, ac);
+                    const nl = v3Len(n);
+                    if (nl < EPSILON) continue;
+                    const nn = v3Scale(n, 1 / nl);
+                    // Check if normal points outward (away from centroid)
+                    const centroid = v3Scale(v3Add(v3Add(a, b), c), 1 / 3);
+                    if (v3Dot(nn, centroid) < 0) {
+                        // Reverse winding
+                        processedFaces.push([...face].reverse());
+                        faceNormals.push(v3Neg(nn));
+                    } else {
+                        processedFaces.push([...face]);
+                        faceNormals.push(nn);
+                    }
+                }
+                // Compute centroid
+                const allVerts = new Set();
+                processedFaces.forEach(f => f.forEach(i => allVerts.add(i)));
+                let cx = 0,
+                    cy = 0,
+                    cz = 0;
+                const allVertsArr = [...allVerts];
+                allVertsArr.forEach(i => { cx += verts[i][0];
+                    cy += verts[i][1];
+                    cz += verts[i][2]; });
+                const nv = allVertsArr.length;
+                const centroid = [cx / nv, cy / nv, cz / nv];
+
+                return {
+                    vertices: verts,
+                    faces: processedFaces,
+                    faceNormals: faceNormals,
+                    centroid: centroid,
+                    boundingRadius: Math.max(...verts.map(v => v3Dist(v, centroid)))
+                };
+            }
+
+            /** Simple 3D convex hull using incremental algorithm */
+            function computeConvexHull(points) {
+                if (points.length < 4) {
+                    return { vertices: points, faces: [
+                            [0, 1, 2]
+                        ] };
+                }
+                // Start with a tetrahedron from 4 non-coplanar points
+                const p0 = points[0];
+                let p1, p2, p3;
+                let maxD = -1;
+                for (let i = 1; i < points.length; i++) { const d = v3Dist(p0, points[i]); if (d > maxD) { maxD = d;
+                        p1 = points[i]; } }
+                maxD = -1;
+                const line = v3Sub(p1, p0);
+                for (let i = 0; i < points.length; i++) {
+                    const cp = v3Len(v3Cross(line, v3Sub(points[i], p0)));
+                    if (cp > maxD) { maxD = cp;
+                        p2 = points[i]; }
+                }
+                maxD = -1;
+                const n012 = v3Cross(v3Sub(p1, p0), v3Sub(p2, p0));
+                for (let i = 0; i < points.length; i++) {
+                    const d = Math.abs(v3Dot(n012, v3Sub(points[i], p0)));
+                    if (d > maxD) { maxD = d;
+                        p3 = points[i]; }
+                }
+                const initialVerts = [p0, p1, p2, p3];
+                let hullFaces = [
+                    [0, 1, 2],
+                    [0, 2, 3],
+                    [0, 3, 1],
+                    [1, 3, 2]
+                ];
+                // Ensure outward normals
+                const c0 = v3Scale(v3Add(v3Add(p0, p1), v3Add(p2, p3)), 0.25);
+                hullFaces = hullFaces.map(f => {
+                    const a = initialVerts[f[0]],
+                        b = initialVerts[f[1]],
+                        c = initialVerts[f[2]];
+                    const n = v3Cross(v3Sub(b, a), v3Sub(c, a));
+                    if (v3Dot(n, v3Sub(a, c0)) < 0) return [f[0], f[2], f[1]];
+                    return f;
+                });
+
+                let hullVerts = [...initialVerts];
+                // Add remaining points incrementally
+                const remaining = points.filter((_, i) => i >= 4);
+                for (const pt of remaining) {
+                    // Check if point is outside the current hull
+                    let outside = false;
+                    const visibleFaces = [];
+                    for (let fi = 0; fi < hullFaces.length; fi++) {
+                        const f = hullFaces[fi];
+                        const a = hullVerts[f[0]],
+                            b = hullVerts[f[1]],
+                            c = hullVerts[f[2]];
+                        const n = v3Cross(v3Sub(b, a), v3Sub(c, a));
+                        const d = v3Dot(n, v3Sub(pt, a));
+                        if (d > EPSILON) {
+                            outside = true;
+                            visibleFaces.push(fi);
+                        }
+                    }
+                    if (!outside) continue;
+                    // Remove visible faces and create new ones
+                    const edgeCount = {};
+                    for (const fi of visibleFaces) {
+                        const f = hullFaces[fi];
+                        const edges = [
+                            [f[0], f[1]],
+                            [f[1], f[2]],
+                            [f[2], f[0]]
+                        ];
+                        for (const e of edges) {
+                            const key = e[0] < e[1] ? `${e[0]},${e[1]}` : `${e[1]},${e[0]}`;
+                            edgeCount[key] = (edgeCount[key] || 0) + 1;
+                        }
+                    }
+                    // Keep faces not visible
+                    const newFaces = [];
+                    for (let fi = 0; fi < hullFaces.length; fi++) {
+                        if (!visibleFaces.includes(fi)) newFaces.push(hullFaces[fi]);
+                    }
+                    // Add new vertex
+                    const newIdx = hullVerts.length;
+                    hullVerts.push(pt);
+                    // Add new faces for boundary edges (edges seen exactly once)
+                    for (const [key, count] of Object.entries(edgeCount)) {
+                        if (count === 1) {
+                            const [a, b] = key.split(',').map(Number);
+                            newFaces.push([a, b, newIdx]);
+                        }
+                    }
+                    hullFaces = newFaces;
+                }
+                return { vertices: hullVerts, faces: hullFaces };
+            }
+
+            /** Subdivide icosahedron to get a sphere approximation, return vertices and triangulated faces */
+            function generateSphereDetail(subdivisions) {
+                const phi = (1 + Math.sqrt(5)) / 2;
+                let verts = [
+                    [0, 1, phi],
+                    [0, -1, phi],
+                    [0, 1, -phi],
+                    [0, -1, -phi],
+                    [1, phi, 0],
+                    [-1, phi, 0],
+                    [1, -phi, 0],
+                    [-1, -phi, 0],
+                    [phi, 0, 1],
+                    [-phi, 0, 1],
+                    [phi, 0, -1],
+                    [-phi, 0, -1]
+                ];
+                verts = verts.map(v => v3Normalize(v));
+                let faces = [
+                    [0, 4, 8],
+                    [0, 8, 1],
+                    [0, 1, 9],
+                    [0, 9, 5],
+                    [0, 5, 4],
+                    [3, 8, 4],
+                    [3, 4, 10],
+                    [3, 10, 6],
+                    [3, 6, 8],
+                    [2, 5, 9],
+                    [2, 9, 7],
+                    [2, 7, 11],
+                    [2, 11, 10],
+                    [2, 10, 4],
+                    [2, 4, 5],
+                    [1, 8, 6],
+                    [1, 6, 7],
+                    [1, 7, 9],
+                    [3, 11, 7],
+                    [3, 6, 10],
+                    [3, 10, 11]
+                ];
+                const edgeMap = new Map();
+                const getMid = (i1, i2) => {
+                    const key = i1 < i2 ? `${i1},${i2}` : `${i2},${i1}`;
+                    if (edgeMap.has(key)) return edgeMap.get(key);
+                    const mid = v3Normalize(v3Scale(v3Add(verts[i1], verts[i2]), 0.5));
+                    const idx = verts.length;
+                    verts.push(mid);
+                    edgeMap.set(key, idx);
+                    return idx;
+                };
+                for (let s = 0; s < subdivisions; s++) {
+                    const newFaces = [];
+                    for (const f of faces) {
+                        const [a, b, c] = f;
+                        const ab = getMid(a, b);
+                        const bc = getMid(b, c);
+                        const ca = getMid(c, a);
+                        newFaces.push([a, ab, ca]);
+                        newFaces.push([ab, b, bc]);
+                        newFaces.push([ca, bc, c]);
+                        newFaces.push([ab, bc, ca]);
+                    }
+                    faces = newFaces;
+                }
+                return { vertices: verts, faces: faces };
+            }
+
+            // ──────────────────────────────────────────────
+            //  RENDER MESH CREATION (triangulate + interleave)
+            // ──────────────────────────────────────────────
+            function createRenderMesh(polyData) {
+                const verts = polyData.vertices;
+                const positions = [];
+                const normals = [];
+                const wireEdges = new Set();
+
+                for (const face of polyData.faces) {
+                    // Triangulate face (fan triangulation for convex faces)
+                    for (let i = 1; i < face.length - 1; i++) {
+                        const tri = [face[0], face[i], face[i + 1]];
+                        const a = verts[tri[0]],
+                            b = verts[tri[1]],
+                            c = verts[tri[2]];
+                        const n = v3Normalize(v3Cross(v3Sub(b, a), v3Sub(c, a)));
+                        for (const vi of tri) {
+                            positions.push(...verts[vi]);
+                            normals.push(...n);
+                        }
+                    }
+                    // Collect edges for wireframe
+                    for (let i = 0; i < face.length; i++) {
+                        const e0 = face[i];
+                        const e1 = face[(i + 1) % face.length];
+                        const key = e0 < e1 ? `${e0},${e1}` : `${e1},${e0}`;
+                        wireEdges.add(key);
+                    }
+                }
+
+                const interleaved = [];
+                for (let i = 0; i < positions.length / 3; i++) {
+                    interleaved.push(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+                    interleaved.push(normals[i * 3], normals[i * 3 + 1], normals[i * 3 + 2]);
+                }
+
+                const wireVerts = [];
+                for (const key of wireEdges) {
+                    const [a, b] = key.split(',').map(Number);
+                    wireVerts.push(...verts[a], ...verts[b]);
+                }
+
+                const vao = createVAO(gl, interleaved, null, [
+                    { location: 0, size: 3, stride: 24, offset: 0 },
+                    { location: 1, size: 3, stride: 24, offset: 12 }
+                ]);
+                vao.vertexCount = interleaved.length / 6;
+
+                const wireVao = createVAO(gl, wireVerts, null, [
+                    { location: 0, size: 3, stride: 12, offset: 0 }
+                ]);
+                wireVao.vertexCount = wireVerts.length / 3;
+                wireVao.isLines = true;
+
+                return { vao, wireVao, vertexCount: vao.vertexCount, wireVertexCount: wireVao.vertexCount };
+            }
+
+            // ──────────────────────────────────────────────
+            //  GROUND PLANE MESH
+            // ──────────────────────────────────────────────
+            function createGroundMesh(size) {
+                const h = size / 2;
+                const verts = [-h, 0, -h, h, 0, -h, h, 0, h, -h, 0, -h, -h, 0, h, h, 0, h];
+                const vao = createVAO(gl, verts, null, [
+                    { location: 0, size: 3, stride: 12, offset: 0 }
+                ]);
+                vao.vertexCount = 6;
+                return vao;
+            }
+
+            // ──────────────────────────────────────────────
+            //  PHYSICS ENGINE CLASSES
+            // ──────────────────────────────────────────────
+
+            /** Rigid body with convex polyhedron collision shape */
+            class RigidBody {
+                constructor(polyData, mass, position, color) {
+                    this.polyData = polyData; // {vertices, faces, faceNormals, centroid, boundingRadius}
+                    this.mass = mass;
+                    this.invMass = mass > 0 ? 1 / mass : 0;
+                    this.position = [...position];
+                    this.orientation = quatIdentity(); // quaternion
+                    this.velocity = [0, 0, 0];
+                    this.angularVelocity = [0, 0, 0];
+                    this.color = color;
+                    this.restitution = 0.35;
+                    this.friction = 0.55;
+                    this.isStatic = (mass <= 0);
+                    // Compute local-space inertia tensor (approximate as sphere for simplicity, then scale)
+                    const r = polyData.boundingRadius;
+                    const Isphere = (2 / 5) * mass * r * r;
+                    this.invInertiaLocal = mass > 0 ? m4Scale(1 / Isphere, 1 / Isphere, 1 / Isphere) : m4Identity();
+                    this.invInertiaWorld = m4Identity();
+                    this.renderMesh = null; // assigned after creation
+                    this.sleeping = false;
+                    this.sleepTimer = 0;
+                }
+
+                getWorldVertices() {
+                    const verts = this.polyData.vertices;
+                    const worldVerts = [];
+                    for (const v of verts) {
+                        const rotated = quatRotate(this.orientation, v);
+                        worldVerts.push(v3Add(rotated, this.position));
+                    }
+                    return worldVerts;
+                }
+
+                getWorldFaceNormals() {
+                    const normals = [];
+                    for (const n of this.polyData.faceNormals) {
+                        normals.push(quatRotate(this.orientation, n));
+                    }
+                    return normals;
+                }
+
+                updateInertiaWorld() {
+                    const rotMat = m4FromQuat(this.orientation);
+                    const rotMatT = [
+                        rotMat[0], rotMat[4], rotMat[8], rotMat[12],
+                        rotMat[1], rotMat[5], rotMat[9], rotMat[13],
+                        rotMat[2], rotMat[6], rotMat[10], rotMat[14],
+                        0, 0, 0, 1
+                    ];
+                    this.invInertiaWorld = m4Multiply(m4Multiply(rotMat, this.invInertiaLocal), rotMatT);
+                }
+
+                applyImpulse(impulse, contactPoint) {
+                    if (this.isStatic) return;
+                    this.velocity = v3Add(this.velocity, v3Scale(impulse, this.invMass));
+                    const r = v3Sub(contactPoint, this.position);
+                    const torque = v3Cross(r, impulse);
+                    // Apply torque using world-space inverse inertia
+                    const dw = [
+                        this.invInertiaWorld[0] * torque[0] + this.invInertiaWorld[4] * torque[1] + this.invInertiaWorld[
+                            8] * torque[2],
+                        this.invInertiaWorld[1] * torque[0] + this.invInertiaWorld[5] * torque[1] + this.invInertiaWorld[
+                            9] * torque[2],
+                        this.invInertiaWorld[2] * torque[0] + this.invInertiaWorld[6] * torque[1] + this.invInertiaWorld[
+                            10] * torque[2]
+                    ];
+                    this.angularVelocity = v3Add(this.angularVelocity, dw);
+                }
+
+                integrate(dt, gravity) {
+                    if (this.isStatic || this.sleeping) return;
+                    // Apply gravity
+                    this.velocity = v3Add(this.velocity, v3Scale(gravity, dt));
+                    // Damping
+                    const linDamp = 0.998;
+                    const angDamp = 0.995;
+                    this.velocity = v3Scale(this.velocity, linDamp);
+                    this.angularVelocity = v3Scale(this.angularVelocity, angDamp);
+                    // Sleep detection
+                    const speed = v3Len(this.velocity) + v3Len(this.angularVelocity);
+                    if (speed < 0.015) {
+                        this.sleepTimer += dt;
+                        if (this.sleepTimer > 1.5) this.sleeping = true;
+                    } else {
+                        this.sleepTimer = 0;
+                        this.sleeping = false;
+                    }
+                    // Integrate position
+                    this.position = v3Add(this.position, v3Scale(this.velocity, dt));
+                    // Integrate orientation
+                    const angSpeed = v3Len(this.angularVelocity);
+                    if (angSpeed > EPSILON) {
+                        const axis = v3Scale(this.angularVelocity, 1 / angSpeed);
+                        const dq = quatFromAxisAngle(axis, angSpeed * dt);
+                        this.orientation = quatNormalize(quatMultiply(dq, this.orientation));
+                    }
+                    this.updateInertiaWorld();
+                }
+            }
+
+            /** Soft body using tetrahedral mass-spring network */
+            class SoftBody {
+                constructor(center, radius, resolution, mass, stiffness, damping, color) {
+                    this.center = [...center];
+                    this.radius = radius;
+                    this.stiffness = stiffness;
+                    this.damping = damping;
+                    this.color = color;
+                    this.particles = [];
+                    this.springs = [];
+                    this.tetrahedra = []; // groups of 4 particle indices for volume preservation
+                    this.generateTetrahedralMesh(center, radius, resolution, mass);
+                    this.renderData = null; // will hold dynamic vertex data
+                }
+
+                generateTetrahedralMesh(center, radius, resolution, mass) {
+                    // Generate surface sphere
+                    const sphereDetail = generateSphereDetail(resolution);
+                    const surfaceVerts = sphereDetail.vertices.map(v => v3Add(v3Scale(v, radius), center));
+                    const surfaceFaces = sphereDetail.faces;
+                    // Add interior shells
+                    const nShells = 3;
+                    const allVerts = [...surfaceVerts];
+                    const surfaceCount = surfaceVerts.length;
+                    // Add interior points
+                    for (let shell = 1; shell <= nShells; shell++) {
+                        const frac = 1 - (shell / (nShells + 1));
+                        const shellRadius = radius * frac * 0.85;
+                        const nPts = Math.max(4, Math.floor(surfaceCount * frac * frac));
+                        for (let i = 0; i < nPts; i++) {
+                            const phi_ = Math.acos(1 - 2 * (i + 0.5) / nPts);
+                            const theta_ = Math.PI * (1 + Math.sqrt(5)) * i;
+                            const x = Math.sin(phi_) * Math.cos(theta_) * shellRadius;
+                            const y = Math.cos(phi_) * shellRadius;
+                            const z = Math.sin(phi_) * Math.sin(theta_) * shellRadius;
+                            allVerts.push(v3Add([x, y, z], center));
+                        }
+                    }
+                    // Add center point
+                    allVerts.push([...center]);
+                    const centerIdx = allVerts.length - 1;
+
+                    // Create particles
+                    const totalMass = mass;
+                    const massPerParticle = totalMass / allVerts.length;
+                    for (const v of allVerts) {
+                        this.particles.push({
+                            pos: [...v],
+                            prevPos: [...v],
+                            velocity: [0, 0, 0],
+                            mass: massPerParticle,
+                            invMass: 1 / massPerParticle,
+                            radius: radius * 0.08
+                        });
+                    }
+
+                    // Create springs from surface triangulation edges
+                    const edgeSet = new Set();
+                    for (const face of surfaceFaces) {
+                        for (let i = 0; i < 3; i++) {
+                            const a = face[i];
+                            const b = face[(i + 1) % 3];
+                            const key = a < b ? `${a},${b}` : `${b},${a}`;
+                            edgeSet.add(key);
+                        }
+                    }
+                    for (const key of edgeSet) {
+                        const [a, b] = key.split(',').map(Number);
+                        if (a < surfaceCount && b < surfaceCount) {
+                            const restLen = v3Dist(this.particles[a].pos, this.particles[b].pos);
+                            this.springs.push({ a, b, restLen, stiffness: this.stiffness, damping: this.damping,
+                                type: 'surface' });
+                        }
+                    }
+
+                    // Connect surface to first interior shell and between shells
+                    const shellStartIndices = [0];
+                    let offset = surfaceCount;
+                    for (let shell = 1; shell <= nShells; shell++) {
+                        const nPts = Math.max(4, Math.floor(surfaceCount * (1 - shell / (nShells + 1)) * (1 - shell / (
+                            nShells + 1))));
+                        shellStartIndices.push(offset);
+                        // Connect each shell vertex to nearest vertices in previous shell
+                        for (let i = offset; i < offset + nPts && i < allVerts.length - 1; i++) {
+                            const prevStart = shellStartIndices[shell - 1];
+                            const prevEnd = shell === 1 ? surfaceCount : shellStartIndices[shell];
+                            // Find 2-3 nearest in previous shell
+                            const dists = [];
+                            for (let j = prevStart; j < prevEnd; j++) {
+                                dists.push({ idx: j, dist: v3Dist(allVerts[i], allVerts[j]) });
+                            }
+                            dists.sort((a, b) => a.dist - b.dist);
+                            for (let k = 0; k < Math.min(3, dists.length); k++) {
+                                const j = dists[k].idx;
+                                const restLen = v3Dist(this.particles[i].pos, this.particles[j].pos);
+                                const key = i < j ? `${i},${j}` : `${j},${i}`;
+                                if (!edgeSet.has(key)) {
+                                    edgeSet.add(key);
+                                    this.springs.push({ a: i, b: j, restLen, stiffness: this.stiffness * 1.3,
+                                        damping: this.damping, type: 'radial' });
+                                }
+                            }
+                        }
+                        offset += nPts;
+                    }
+                    // Connect last shell to center
+                    const lastShellStart = shellStartIndices[nShells] || surfaceCount;
+                    const lastShellEnd = allVerts.length - 1;
+                    for (let i = lastShellStart; i < lastShellEnd; i++) {
+                        const restLen = v3Dist(this.particles[i].pos, this.particles[centerIdx].pos);
+                        this.springs.push({ a: i, b: centerIdx, restLen, stiffness: this.stiffness * 2.0, damping: this
+                                .damping, type: 'core' });
+                    }
+
+                    // Create tetrahedra for volume preservation (surface triangles + interior)
+                    for (const face of surfaceFaces) {
+                        const a = face[0],
+                            b = face[1],
+                            c = face[2];
+                        if (a < surfaceCount && b < surfaceCount && c < surfaceCount) {
+                            // Find nearest interior point
+                            const centroid = v3Scale(v3Add(v3Add(allVerts[a], allVerts[b]), allVerts[c]), 1 / 3);
+                            let nearestInterior = centerIdx;
+                            let minDist = v3Dist(centroid, allVerts[centerIdx]);
+                            for (let i = surfaceCount; i < allVerts.length - 1; i++) {
+                                const d = v3Dist(centroid, allVerts[i]);
+                                if (d < minDist) { minDist = d;
+                                    nearestInterior = i; }
+                            }
+                            this.tetrahedra.push([a, b, c, nearestInterior]);
+                        }
+                    }
+                }
+
+                simulate(dt, gravity) {
+                    // Verlet-like integration with velocity
+                    for (const p of this.particles) {
+                        p.velocity = v3Add(p.velocity, v3Scale(gravity, dt));
+                        const dampedVel = v3Scale(p.velocity, 0.997);
+                        p.velocity = dampedVel;
+                        p.prevPos = [...p.pos];
+                        p.pos = v3Add(p.pos, v3Scale(p.velocity, dt));
+                    }
+                    // Solve springs (multiple iterations)
+                    const iterations = 4;
+                    for (let iter = 0; iter < iterations; iter++) {
+                        for (const s of this.springs) {
+                            const a = this.particles[s.a];
+                            const b = this.particles[s.b];
+                            const delta = v3Sub(b.pos, a.pos);
+                            const dist = v3Len(delta);
+                            if (dist < EPSILON) continue;
+                            const dir = v3Scale(delta, 1 / dist);
+                            const correction = (dist - s.restLen) * s.stiffness * 0.01;
+                            const totalInvMass = a.invMass + b.invMass;
+                            if (totalInvMass < EPSILON) continue;
+                            const impulse = v3Scale(dir, correction / totalInvMass);
+                            a.pos = v3Add(a.pos, v3Scale(impulse, a.invMass));
+                            b.pos = v3Sub(b.pos, v3Scale(impulse, b.invMass));
+                        }
+                        // Volume preservation for tetrahedra
+                        for (const tet of this.tetrahedra) {
+                            const [i0, i1, i2, i3] = tet;
+                            const p = [this.particles[i0], this.particles[i1], this.particles[i2], this.particles[i3]];
+                            const ab = v3Sub(p[1].pos, p[0].pos);
+                            const ac = v3Sub(p[2].pos, p[0].pos);
+                            const ad = v3Sub(p[3].pos, p[0].pos);
+                            const currentVol = Math.abs(v3Dot(ad, v3Cross(ab, ac))) / 6;
+                            // Compute rest volume from initial positions
+                            const ab0 = v3Sub(p[1].prevPos, p[0].prevPos);
+                            const ac0 = v3Sub(p[2].prevPos, p[0].prevPos);
+                            const ad0 = v3Sub(p[3].prevPos, p[0].prevPos);
+                            const restVol = Math.abs(v3Dot(ad0, v3Cross(ab0, ac0))) / 6;
+                            if (restVol < EPSILON || currentVol < EPSILON) continue;
+                            const volStiffness = this.stiffness * 0.005;
+                            const volDiff = (currentVol - restVol) / restVol;
+                            if (Math.abs(volDiff) < 0.001) continue;
+                            // Push particles along gradients
+                            const grad0 = v3Cross(v3Sub(p[2].pos, p[1].pos), v3Sub(p[3].pos, p[1].pos));
+                            const grad1 = v3Cross(v3Sub(p[2].pos, p[0].pos), v3Sub(p[3].pos, p[0].pos));
+                            const grad2 = v3Cross(v3Sub(p[1].pos, p[0].pos), v3Sub(p[3].pos, p[0].pos));
+                            const grad3 = v3Cross(v3Sub(p[1].pos, p[0].pos), v3Sub(p[2].pos, p[0].pos));
+                            const grads = [v3Neg(grad0), grad1, v3Neg(grad2), grad3];
+                            const totalGradSq = grads.reduce((s, g) => s + v3Dot(g, g), 0);
+                            if (totalGradSq < EPSILON) continue;
+                            const scale = -volDiff * volStiffness / totalGradSq;
+                            for (let i = 0; i < 4; i++) {
+                                const particle = p[i];
+                                particle.pos = v3Add(particle.pos, v3Scale(grads[i], scale * particle.invMass));
+                            }
+                        }
+                    }
+                    // Update velocities
+                    for (const p of this.particles) {
+                        p.velocity = v3Scale(v3Sub(p.pos, p.prevPos), 1 / Math.max(dt, EPSILON));
+                    }
+                    // Ground collision
+                    for (const p of this.particles) {
+                        if (p.pos[1] < p.radius) {
+                            p.pos[1] = p.radius;
+                            if (p.velocity[1] < 0) p.velocity[1] *= -0.3;
+                        }
+                    }
+                }
+
+                getRenderVertices() {
+                    // Return triangulated surface vertices (from the first surfaceCount particles)
+                    const surfaceCount = this.particles.length > 0 ? Math.min(this.particles.length,
+                        this.tetrahedra.reduce((max, t) => Math.max(max, t[0], t[1], t[2]), 0) + 1) : 0;
+                    const verts = [];
+                    const norms = [];
+                    // Use tetrahedra to reconstruct surface
+                    const faceSet = new Set();
+                    for (const tet of this.tetrahedra) {
+                        const faces = [
+                            [tet[0], tet[1], tet[2]],
+                            [tet[0], tet[2], tet[3]],
+                            [tet[0], tet[3], tet[1]],
+                            [tet[1], tet[3], tet[2]]
+                        ];
+                        for (const f of faces) {
+                            const key = f.sort().join(',');
+                            if (faceSet.has(key)) faceSet.delete(key);
+                            else faceSet.add(key);
+                        }
+                    }
+                    for (const key of faceSet) {
+                        const [a, b, c] = key.split(',').map(Number);
+                        if (a < this.particles.length && b < this.particles.length && c < this.particles.length) {
+                            const pa = this.particles[a].pos;
+                            const pb = this.particles[b].pos;
+                            const pc = this.particles[c].pos;
+                            const n = v3Normalize(v3Cross(v3Sub(pb, pa), v3Sub(pc, pa)));
+                            verts.push(...pa, ...pb, ...pc);
+                            norms.push(...n, ...n, ...n);
+                        }
+                    }
+                    return { positions: verts, normals: norms, vertexCount: verts.length / 3 };
+                }
+            }
+
+            // ──────────────────────────────────────────────
+            //  COLLISION DETECTION (SAT for convex polyhedra)
+            // ──────────────────────────────────────────────
+            function satCollision(bodyA, bodyB) {
+                const vertsA = bodyA.getWorldVertices();
+                const vertsB = bodyB.getWorldVertices();
+                const facesA = bodyA.polyData.faces;
+                const facesB = bodyB.polyData.faces;
+                const normalsA = bodyA.getWorldFaceNormals();
+                const normalsB = bodyB.getWorldFaceNormals();
+
+                let minOverlap = Infinity;
+                let bestNormal = [0, 0, 0];
+                let bestPoint = [0, 0, 0];
+                let bestDepth = 0;
+
+                // Test all face normals of A
+                for (const n of normalsA) {
+                    const projA = vertsA.map(v => v3Dot(v, n));
+                    const projB = vertsB.map(v => v3Dot(v, n));
+                    const minA = Math.min(...projA),
+                        maxA = Math.max(...projA);
+                    const minB = Math.min(...projB),
+                        maxB = Math.max(...projB);
+                    const overlap = Math.min(maxA, maxB) - Math.max(minA, minB);
+                    if (overlap < -EPSILON) return null; // Separating axis found
+                    if (overlap < minOverlap) {
+                        minOverlap = overlap;
+                        bestNormal = [...n];
+                        bestDepth = overlap;
+                    }
+                }
+                // Test all face normals of B
+                for (const n of normalsB) {
+                    const projA = vertsA.map(v => v3Dot(v, n));
+                    const projB = vertsB.map(v => v3Dot(v, n));
+                    const minA = Math.min(...projA),
+                        maxA = Math.max(...projA);
+                    const minB = Math.min(...projB),
+                        maxB = Math.max(...projB);
+                    const overlap = Math.min(maxA, maxB) - Math.max(minA, minB);
+                    if (overlap < -EPSILON) return null;
+                    if (overlap < minOverlap) {
+                        minOverlap = overlap;
+                        bestNormal = [...n];
+                        bestDepth = overlap;
+                    }
+                }
+                // Test cross products of edges (simplified: only a few edge pairs)
+                const edgesA = [];
+                for (const f of facesA) {
+                    for (let i = 0; i < f.length; i++) {
+                        const a = vertsA[f[i]];
+                        const b = vertsA[f[(i + 1) % f.length]];
+                        edgesA.push(v3Sub(b, a));
+                    }
+                }
+                const edgesB = [];
+                for (const f of facesB) {
+                    for (let i = 0; i < f.length; i++) {
+                        const a = vertsB[f[i]];
+                        const b = vertsB[f[(i + 1) % f.length]];
+                        edgesB.push(v3Sub(b, a));
+                    }
+                }
+                // Test a subset of edge cross products
+                const testedPairs = new Set();
+                for (let i = 0; i < Math.min(edgesA.length, 6); i++) {
+                    for (let j = 0; j < Math.min(edgesB.length, 6); j++) {
+                        const cross = v3Cross(edgesA[i], edgesB[j]);
+                        const cl = v3Len(cross);
+                        if (cl < EPSILON) continue;
+                        const n = v3Scale(cross, 1 / cl);
+                        const key = n.map(x => Math.round(x * 1000)).join(',');
+                        if (testedPairs.has(key)) continue;
+                        testedPairs.add(key);
+                        const projA = vertsA.map(v => v3Dot(v, n));
+                        const projB = vertsB.map(v => v3Dot(v, n));
+                        const minA = Math.min(...projA),
+                            maxA = Math.max(...projA);
+                        const minB = Math.min(...projB),
+                            maxB = Math.max(...projB);
+                        const overlap = Math.min(maxA, maxB) - Math.max(minA, minB);
+                        if (overlap < -EPSILON) return null;
+                        if (overlap < minOverlap) {
+                            minOverlap = overlap;
+                            bestNormal = [...n];
+                            bestDepth = overlap;
+                        }
+                    }
+                }
+                // Ensure normal points from B to A
+                const dir = v3Sub(bodyA.position, bodyB.position);
+                if (v3Dot(bestNormal, dir) < 0) bestNormal = v3Neg(bestNormal);
+                // Find contact point (approximate)
+                bestPoint = v3Lerp(bodyA.position, bodyB.position, 0.5);
+                return {
+                    normal: bestNormal,
+                    depth: Math.max(0, bestDepth),
+                    point: bestPoint,
+                    bodyA: bodyA,
+                    bodyB: bodyB
+                };
+            }
+
+            function resolveCollision(contact) {
+                const { normal, depth, point, bodyA, bodyB } = contact;
+                if (depth < EPSILON) return;
+                // Position correction
+                const totalInvMass = bodyA.invMass + bodyB.invMass;
+                if (totalInvMass < EPSILON) return;
+                const correction = v3Scale(normal, depth * 0.6 / totalInvMass);
+                if (!bodyA.isStatic) bodyA.position = v3Add(bodyA.position, v3Scale(correction, bodyA.invMass));
+                if (!bodyB.isStatic) bodyB.position = v3Sub(bodyB.position, v3Scale(correction, bodyB.invMass));
+                // Relative velocity
+                const rA = v3Sub(point, bodyA.position);
+                const rB = v3Sub(point, bodyB.position);
+                const velA = v3Add(bodyA.velocity, v3Cross(bodyA.angularVelocity, rA));
+                const velB = v3Add(bodyB.velocity, v3Cross(bodyB.angularVelocity, rB));
+                const relVel = v3Sub(velA, velB);
+                const relVelN = v3Dot(relVel, normal);
+                if (relVelN > 0) return; // Separating
+                // Compute impulse
+                const restitution = (bodyA.restitution + bodyB.restitution) * 0.5;
+                const friction = (bodyA.friction + bodyB.friction) * 0.5;
+                const nA = v3Cross(rA, normal);
+                const nB = v3Cross(rB, normal);
+                const invEffectiveMass = totalInvMass +
+                    v3Dot(nA, [
+                        bodyA.invInertiaWorld[0] * nA[0] + bodyA.invInertiaWorld[4] * nA[1] + bodyA.invInertiaWorld[8] *
+                        nA[2],
+                        bodyA.invInertiaWorld[1] * nA[0] + bodyA.invInertiaWorld[5] * nA[1] + bodyA.invInertiaWorld[9] *
+                        nA[2],
+                        bodyA.invInertiaWorld[2] * nA[0] + bodyA.invInertiaWorld[6] * nA[1] + bodyA.invInertiaWorld[10] *
+                        nA[2]
+                    ]) +
+                    v3Dot(nB, [
+                        bodyB.invInertiaWorld[0] * nB[0] + bodyB.invInertiaWorld[4] * nB[1] + bodyB.invInertiaWorld[8] *
+                        nB[2],
+                        bodyB.invInertiaWorld[1] * nB[0] + bodyB.invInertiaWorld[5] * nB[1] + bodyB.invInertiaWorld[9] *
+                        nB[2],
+                        bodyB.invInertiaWorld[2] * nB[0] + bodyB.invInertiaWorld[6] * nB[1] + bodyB.invInertiaWorld[10] *
+                        nB[2]
+                    ]);
+                const jn = -(1 + restitution) * relVelN / Math.max(invEffectiveMass, EPSILON);
+                const impulseNormal = v3Scale(normal, Math.max(0, jn));
+                bodyA.applyImpulse(impulseNormal, point);
+                bodyB.applyImpulse(v3Neg(impulseNormal), point);
+                // Friction impulse
+                const tangent = v3Normalize(v3Sub(relVel, v3Scale(normal, relVelN)));
+                const relVelT = v3Dot(relVel, tangent);
+                const jt = -relVelT / Math.max(invEffectiveMass, EPSILON);
+                const maxFriction = Math.abs(jn) * friction;
+                const impulseTangent = v3Scale(tangent, Math.max(-maxFriction, Math.min(maxFriction, jt)));
+                bodyA.applyImpulse(impulseTangent, point);
+                bodyB.applyImpulse(v3Neg(impulseTangent), point);
+                return { point, normal, depth };
+            }
+
+            // ──────────────────────────────────────────────
+            //  PARTICLE SYSTEM
+            // ──────────────────────────────────────────────
+            class ParticleSystem {
+                constructor(maxParticles) {
+                    this.maxParticles = maxParticles;
+                    this.particles = [];
+                    this.vao = null;
+                    this.initVAO();
+                }
+
+                initVAO() {
+                    const vao = gl.createVertexArray();
+                    gl.bindVertexArray(vao);
+                    const vbo = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                    gl.bufferData(gl.ARRAY_BUFFER, this.maxParticles * 7 * 4, gl.DYNAMIC_DRAW);
+                    gl.enableVertexAttribArray(0);
+                    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0);
+                    gl.enableVertexAttribArray(1);
+                    gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 28, 12);
+                    gl.enableVertexAttribArray(2);
+                    gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 28, 16);
+                    gl.bindVertexArray(null);
+                    this.vao = vao;
+                    this.vbo = vbo;
+                }
+
+                emit(position, velocity, color, life, size) {
+                    this.particles.push({
+                        pos: [...position],
+                        vel: [...velocity],
+                        color: [...color],
+                        life: life,
+                        maxLife: life,
+                        size: size || 0.08
+                    });
+                    if (this.particles.length > this.maxParticles) this.particles.shift();
+                }
+
+                update(dt, gravity) {
+                    for (let i = this.particles.length - 1; i >= 0; i--) {
+                        const p = this.particles[i];
+                        p.life -= dt;
+                        if (p.life <= 0) { this.particles.splice(i, 1); continue; }
+                        p.vel = v3Add(p.vel, v3Scale(gravity, dt * 0.5));
+                        p.pos = v3Add(p.pos, v3Scale(p.vel, dt));
+                        if (p.pos[1] < 0) { p.pos[1] = 0;
+                            p.vel[1] *= -0.4;
+                            p.vel = v3Scale(p.vel, 0.7); }
+                    }
+                }
+
+                getBufferData() {
+                    const data = [];
+                    for (const p of this.particles) {
+                        data.push(p.pos[0], p.pos[1], p.pos[2], p.size, p.life / p.maxLife);
+                    }
+                    return new Float32Array(data);
+                }
+
+                render(gl, prog, vpMat, viewMat) {
+                    if (this.particles.length === 0) return;
+                    const data = this.getBufferData();
+                    gl.bindVertexArray(this.vao);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+                    gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
+                    gl.useProgram(prog);
+                    gl.uniformMatrix4fv(gl.getUniformLocation(prog, 'uVP'), false, vpMat);
+                    gl.uniformMatrix4fv(gl.getUniformLocation(prog, 'uView'), false, viewMat);
+                    gl.uniform3fv(gl.getUniformLocation(prog, 'uParticleColor'), [1, 0.85, 0.2]);
+                    gl.enable(gl.BLEND);
+                    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+                    gl.depthMask(false);
+                    gl.drawArrays(gl.POINTS, 0, this.particles.length);
+                    gl.depthMask(true);
+                    gl.disable(gl.BLEND);
+                    gl.bindVertexArray(null);
+                }
+            }
+
+            // ──────────────────────────────────────────────
+            //  SCENE / WORLD
+            // ──────────────────────────────────────────────
+            let rigidBodies = [];
+            let softBody = null;
+            let particleSystem = null;
+            let gravity = [0, -9.8, 0];
+            let stiffness = 80;
+            let damping = 4.0;
+            let paused = false;
+            let wireframeMode = false;
+            let selectedBody = null;
+            let mouseDragStart = null;
+            let mouseWorldStart = null;
+
+            const groundY = 0;
+            const groundVao = createGroundMesh(60);
+
+            // ──────────────────────────────────────────────
+            //  SCENE SETUP FUNCTIONS
+            // ──────────────────────────────────────────────
+            function clearScene() {
+                rigidBodies = [];
+                softBody = null;
+                particleSystem = new ParticleSystem(800);
+                selectedBody = null;
+            }
+
+            function createRenderMeshesForBodies() {
+                for (const body of rigidBodies) {
+                    if (!body.renderMesh) {
+                        body.renderMesh = createRenderMesh(body.polyData);
+                    }
+                }
+            }
+
+            function setupRigidCollapse() {
+                clearScene();
+                const shapes = [
+                    { gen: generateCube, mass: 1.5, color: [0.85, 0.35, 0.3], scale: 1.2 },
+                    { gen: generateTetrahedron, mass: 1.0, color: [0.3, 0.7, 0.85], scale: 1.3 },
+                    { gen: generateOctahedron, mass: 1.2, color: [0.75, 0.65, 0.2], scale: 1.1 },
+                    { gen: generateDodecahedron, mass: 1.8, color: [0.55, 0.4, 0.75], scale: 0.9 },
+                    { gen: generateIcosahedron, mass: 1.3, color: [0.35, 0.75, 0.45], scale: 1.0 },
+                    { gen: generateBunnyShape, mass: 2.0, color: [0.9, 0.6, 0.4], scale: 1.0 },
+                    { gen: generateCube, mass: 1.5, color: [0.7, 0.3, 0.5], scale: 1.0 },
+                ];
+
+                // Create a tower of random shapes
+                const towerX = 0;
+                const towerZ = 0;
+                let y = 2.5;
+                const nRows = 5;
+                const nCols = 3;
+                for (let row = 0; row < nRows; row++) {
+                    const nInRow = row === 0 ? nCols : (row === nRows - 1 ? 1 : nCols);
+                    for (let col = 0; col < nInRow; col++) {
+                        const shapeIdx = (row * nCols + col) % shapes.length;
+                        const shape = shapes[shapeIdx];
+                        const polyData = shape.gen();
+                        // Scale the polyhedron
+                        const s = shape.scale * (1.0 + Math.random() * 0.5);
+                        const scaledVerts = polyData.vertices.map(v => v3Scale(v, s));
+                        const scaledPoly = buildPolyhedron(scaledVerts, polyData.faces);
+                        const xOff = (col - (nInRow - 1) / 2) * 2.8;
+                        const zOff = (Math.random() - 0.5) * 1.5;
+                        const body = new RigidBody(scaledPoly, shape.mass, [towerX + xOff, y, towerZ + zOff], shape
+                            .color);
+                        body.restitution = 0.3;
+                        body.friction = 0.6;
+                        rigidBodies.push(body);
+                    }
+                    y += 2.6;
+                }
+                // Add some scattered objects on the ground
+                for (let i = 0; i < 6; i++) {
+                    const shape = shapes[i % shapes.length];
+                    const polyData = shape.gen();
+                    const s = shape.scale * (0.8 + Math.random() * 0.7);
+                    const scaledVerts = polyData.vertices.map(v => v3Scale(v, s));
+                    const scaledPoly = buildPolyhedron(scaledVerts, polyData.faces);
+                    const body = new RigidBody(scaledPoly, shape.mass, [
+                        (Math.random() - 0.5) * 14, 1.5 + Math.random() * 5,
+                        (Math.random() - 0.5) * 14
+                    ], shape.color);
+                    rigidBodies.push(body);
+                }
+                createRenderMeshesForBodies();
+                document.getElementById('btnRigid')?.classList.add('active');
+                document.getElementById('btnSoft')?.classList.remove('active');
+                document.getElementById('btnDestruct')?.classList.remove('active');
+                document.getElementById('btnRagdoll')?.classList.remove('active');
+            }
+
+            function setupSoftDeform() {
+                clearScene();
+                // Create a soft body sphere
+                softBody = new SoftBody([0, 6, 0], 2.5, 2, 2.5, stiffness, damping, [0.3, 0.8, 0.5]);
+                // Add a few rigid bodies to interact with
+                const shapes = [
+                    { gen: generateCube, mass: 2.0, color: [0.85, 0.4, 0.3], scale: 1.4 },
+                    { gen: generateIcosahedron, mass: 1.5, color: [0.4, 0.5, 0.85], scale: 1.2 },
+                    { gen: generateDodecahedron, mass: 2.5, color: [0.7, 0.55, 0.3], scale: 1.0 },
+                ];
+                for (let i = 0; i < 4; i++) {
+                    const shape = shapes[i % shapes.length];
+                    const polyData = shape.gen();
+                    const s = shape.scale;
+                    const scaledVerts = polyData.vertices.map(v => v3Scale(v, s));
+                    const scaledPoly = buildPolyhedron(scaledVerts, polyData.faces);
+                    const body = new RigidBody(scaledPoly, shape.mass, [
+                        (i - 1.5) * 3.5, 2 + Math.random() * 3,
+                        (Math.random() - 0.5) * 4
+                    ], shape.color);
+                    rigidBodies.push(body);
+                }
+                createRenderMeshesForBodies();
+                document.getElementById('btnRigid')?.classList.remove('active');
+                document.getElementById('btnSoft')?.classList.add('active');
+                document.getElementById('btnDestruct')?.classList.remove('active');
+                document.getElementById('btnRagdoll')?.classList.remove('active');
+            }
+
+            function setupDestruction() {
+                clearScene();
+                // Create a tall precarious tower
+                const towerX = 0;
+                const towerZ = 0;
+                let y = 2;
+                const nRows = 8;
+                for (let row = 0; row < nRows; row++) {
+                    const nInRow = row < 3 ? 3 : (row < 6 ? 2 : 1);
+                    for (let col = 0; col < nInRow; col++) {
+                        const gen = [generateCube, generateTetrahedron, generateOctahedron][(row + col) % 3];
+                        const polyData = gen();
+                        const s = 1.0 + Math.random() * 0.4;
+                        const scaledVerts = polyData.vertices.map(v => v3Scale(v, s));
+                        const scaledPoly = buildPolyhedron(scaledVerts, polyData.faces);
+                        const color = [0.3 + Math.random() * 0.6, 0.2 + Math.random() * 0.5, 0.3 + Math.random() * 0.5];
+                        const body = new RigidBody(scaledPoly, 1.2 + Math.random(), [
+                            towerX + (col - (nInRow - 1) / 2) * 2.5,
+                            y,
+                            towerZ + (Math.random() - 0.5) * 1.2
+                        ], color);
+                        body.restitution = 0.25;
+                        body.friction = 0.7;
+                        rigidBodies.push(body);
+                    }
+                    y += 2.3;
+                }
+                // Heavy ball to knock things down
+                const ballPoly = generateIcosahedron();
+                const ballVerts = ballPoly.vertices.map(v => v3Scale(v, 2.0));
+                const ball = buildPolyhedron(ballVerts, ballPoly.faces);
+                const heavyBall = new RigidBody(ball, 8.0, [8, 10, 0], [0.9, 0.2, 0.2]);
+                heavyBall.velocity = [-6, 2, 1];
+                rigidBodies.push(heavyBall);
+                createRenderMeshesForBodies();
+                document.getElementById('btnRigid')?.classList.remove('active');
+                document.getElementById('btnSoft')?.classList.remove('active');
+                document.getElementById('btnDestruct')?.classList.add('active');
+                document.getElementById('btnRagdoll')?.classList.remove('active');
+            }
+
+            function setupRagdoll() {
+                clearScene();
+                // Simple ragdoll: head (sphere), torso (box), arms and legs (elongated boxes)
+                const headPoly = generateIcosahedron();
+                const headScaled = buildPolyhedron(headPoly.vertices.map(v => v3Scale(v, 1.0)), headPoly.faces);
+                const torsoPoly = generateCube();
+                const torsoScaled = buildPolyhedron(torsoPoly.vertices.map(v => [v[0] * 1.3, v[1] * 1.8, v[2] * 0.7]),
+                    torsoPoly.faces);
+                const limbPoly = generateCube();
+                const limbScaledH = buildPolyhedron(limbPoly.vertices.map(v => [v[0] * 0.45, v[1] * 1.3, v[2] * 0.45]),
+                    limbPoly.faces);
+                const limbScaledV = buildPolyhedron(limbPoly.vertices.map(v => [v[0] * 0.5, v[1] * 1.4, v[2] * 0.5]),
+                    limbPoly.faces);
+
+                const head = new RigidBody(headScaled, 1.5, [0, 9.5, 0], [0.95, 0.8, 0.65]);
+                const torso = new RigidBody(torsoScaled, 3.5, [0, 7.0, 0], [0.3, 0.4, 0.8]);
+                const upperArmL = new RigidBody(limbScaledH, 1.0, [-2.0, 8.0, 0], [0.85, 0.7, 0.55]);
+                const upperArmR = new RigidBody(limbScaledH, 1.0, [2.0, 8.0, 0], [0.85, 0.7, 0.55]);
+                const lowerArmL = new RigidBody(limbScaledH, 0.8, [-2.0, 6.2, 0], [0.9, 0.75, 0.6]);
+                const lowerArmR = new RigidBody(limbScaledH, 0.8, [2.0, 6.2, 0], [0.9, 0.75, 0.6]);
+                const upperLegL = new RigidBody(limbScaledV, 1.3, [-0.7, 4.8, 0], [0.4, 0.35, 0.5]);
+                const upperLegR = new RigidBody(limbScaledV, 1.3, [0.7, 4.8, 0], [0.4, 0.35, 0.5]);
+                const lowerLegL = new RigidBody(limbScaledV, 1.0, [-0.7, 3.0, 0], [0.45, 0.4, 0.55]);
+                const lowerLegR = new RigidBody(limbScaledV, 1.0, [0.7, 3.0, 0], [0.45, 0.4, 0.55]);
+
+                rigidBodies.push(head, torso, upperArmL, upperArmR, lowerArmL, lowerArmR, upperLegL, upperLegR, lowerLegL,
+                    lowerLegR);
+
+                // Store joint definitions for constraint solving
+                window.ragdollJoints = [
+                    { a: head, b: torso, anchorA: [0, -0.9, 0], anchorB: [0, 1.7, 0], dist: 0.3 },
+                    { a: upperArmL, b: torso, anchorA: [0.4, 0, 0], anchorB: [-1.3, 1.0, 0], dist: 0.4 },
+                    { a: upperArmR, b: torso, anchorA: [-0.4, 0, 0], anchorB: [1.3, 1.0, 0], dist: 0.4 },
+                    { a: lowerArmL, b: upperArmL, anchorA: [0, 1.2, 0], anchorB: [0, -1.2, 0], dist: 0.25 },
+                    { a: lowerArmR, b: upperArmR, anchorA: [0, 1.2, 0], anchorB: [0, -1.2, 0], dist: 0.25 },
+                    { a: upperLegL, b: torso, anchorA: [0, 1.3, 0], anchorB: [-0.7, -1.6, 0], dist: 0.4 },
+                    { a: upperLegR, b: torso, anchorA: [0, 1.3, 0], anchorB: [0.7, -1.6, 0], dist: 0.4 },
+                    { a: lowerLegL, b: upperLegL, anchorA: [0, 1.3, 0], anchorB: [0, -1.3, 0], dist: 0.25 },
+                    { a: lowerLegR, b: upperLegR, anchorA: [0, 1.3, 0], anchorB: [0, -1.3, 0], dist: 0.25 },
+                ];
+                createRenderMeshesForBodies();
+                document.getElementById('btnRigid')?.classList.remove('active');
+                document.getElementById('btnSoft')?.classList.remove('active');
+                document.getElementById('btnDestruct')?.classList.remove('active');
+                document.getElementById('btnRagdoll')?.classList.add('active');
+            }
+
+            function solveRagdollJoints() {
+                if (!window.ragdollJoints) return;
+                for (const joint of window.ragdollJoints) {
+                    const worldAnchorA = v3Add(joint.a.position, quatRotate(joint.a.orientation, joint.anchorA));
+                    const worldAnchorB = v3Add(joint.b.position, quatRotate(joint.b.orientation, joint.anchorB));
+                    const delta = v3Sub(worldAnchorB, worldAnchorA);
+                    const dist = v3Len(delta);
+                    if (dist < EPSILON) continue;
+                    const correction = (dist - joint.dist) * 0.5;
+                    const dir = v3Scale(delta, 1 / dist);
+                    const totalInvMass = joint.a.invMass + joint.b.invMass;
+                    if (totalInvMass < EPSILON) continue;
+                    const impulse = v3Scale(dir, correction / totalInvMass);
+                    if (!joint.a.isStatic) joint.a.position = v3Add(joint.a.position, v3Scale(impulse, joint.a.invMass));
+                    if (!joint.b.isStatic) joint.b.position = v3Sub(joint.b.position, v3Scale(impulse, joint.b.invMass));
+                }
+            }
+
+            // ──────────────────────────────────────────────
+            //  RAY CASTING (for mouse interaction)
+            // ──────────────────────────────────────────────
+            function raycastBody(rayOrigin, rayDir, body) {
+                const worldVerts = body.getWorldVertices();
+                const faces = body.polyData.faces;
+                let closestT = Infinity;
+                let closestPoint = null;
+                for (const face of faces) {
+                    const a = worldVerts[face[0]];
+                    const b = worldVerts[face[1]];
+                    const c = worldVerts[face[2]];
+                    const ab = v3Sub(b, a);
+                    const ac = v3Sub(c, a);
+                    const n = v3Cross(ab, ac);
+                    const nl = v3Len(n);
+                    if (nl < EPSILON) continue;
+                    const nn = v3Scale(n, 1 / nl);
+                    const d = -v3Dot(nn, a);
+                    const denom = v3Dot(nn, rayDir);
+                    if (Math.abs(denom) < EPSILON) continue;
+                    const t = -(v3Dot(nn, rayOrigin) + d) / denom;
+                    if (t < 0.01 || t > closestT) continue;
+                    const pt = v3Add(rayOrigin, v3Scale(rayDir, t));
+                    // Check if point is inside triangle
+                    const v0 = v3Sub(c, a);
+                    const v1 = v3Sub(b, a);
+                    const v2 = v3Sub(pt, a);
+                    const dot00 = v3Dot(v0, v0);
+                    const dot01 = v3Dot(v0, v1);
+                    const dot02 = v3Dot(v0, v2);
+                    const dot11 = v3Dot(v1, v1);
+                    const dot12 = v3Dot(v1, v2);
+                    const invDenom = 1 / (dot00 * dot11 - dot01 * dot01);
+                    const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+                    const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+                    if (u >= -EPSILON && v >= -EPSILON && u + v <= 1 + EPSILON) {
+                        closestT = t;
+                        closestPoint = pt;
+                    }
+                }
+                return closestPoint ? { point: closestPoint, t: closestT, body } : null;
+            }
+
+            function raycastAll(rayOrigin, rayDir) {
+                let best = null;
+                for (const body of rigidBodies) {
+                    const hit = raycastBody(rayOrigin, rayDir, body);
+                    if (hit && (best === null || hit.t < best.t)) best = hit;
+                }
+                return best;
+            }
+
+            // ──────────────────────────────────────────────
+            //  MAIN PHYSICS STEP
+            // ──────────────────────────────────────────────
+            function physicsStep(dt) {
+                if (paused) return;
+                const subSteps = 3;
+                const subDt = dt / subSteps;
+
+                for (let s = 0; s < subSteps; s++) {
+                    // Integrate rigid bodies
+                    for (const body of rigidBodies) {
+                        body.integrate(subDt, gravity);
+                    }
+                    // Simulate soft body
+                    if (softBody) {
+                        softBody.simulate(subDt, gravity);
+                        // Soft body particles interact with rigid bodies (simple push)
+                        for (const p of softBody.particles) {
+                            for (const body of rigidBodies) {
+                                if (body.isStatic) continue;
+                                const worldVerts = body.getWorldVertices();
+                                // Quick sphere check
+                                const closestPt = worldVerts.reduce((best, v) => {
+                                    const d = v3Dist(p.pos, v);
+                                    return d < best.d ? { v, d } : best;
+                                }, { v: worldVerts[0], d: Infinity });
+                                const combinedRadius = p.radius + body.polyData.boundingRadius * 0.3;
+                                if (closestPt.d < combinedRadius && closestPt.d > EPSILON) {
+                                    const dir = v3Normalize(v3Sub(p.pos, closestPt.v));
+                                    const penetration = combinedRadius - closestPt.d;
+                                    p.pos = v3Add(p.pos, v3Scale(dir, penetration * 0.5));
+                                    if (!body.isStatic) {
+                                        body.position = v3Sub(body.position, v3Scale(dir, penetration * 0.5 * body.invMass /
+                                            (body.invMass + p.invMass)));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Solve ragdoll joints
+                    solveRagdollJoints();
+                    // Broad phase collision detection (simple pairwise)
+                    const contacts = [];
+                    for (let i = 0; i < rigidBodies.length; i++) {
+                        for (let j = i + 1; j < rigidBodies.length; j++) {
+                            const a = rigidBodies[i];
+                            const b = rigidBodies[j];
+                            if (a.isStatic && b.isStatic) continue;
+                            if (a.sleeping && b.sleeping) continue;
+                            const dist = v3Dist(a.position, b.position);
+                            const combinedRadius = a.polyData.boundingRadius + b.polyData.boundingRadius;
+                            if (dist < combinedRadius * 1.1) {
+                                const contact = satCollision(a, b);
+                                if (contact) contacts.push(contact);
+                            }
+                        }
+                    }
+                    // Resolve collisions
+                    for (const contact of contacts) {
+                        const result = resolveCollision(contact);
+                        if (result && particleSystem && result.depth > 0.15) {
+                            const nParticles = Math.floor(result.depth * 12);
+                            for (let i = 0; i < nParticles; i++) {
+                                const spread = v3Add(
+                                    v3Scale(result.normal, (0.5 + Math.random()) * 3),
+                                    [
+                                        (Math.random() - 0.5) * 4,
+                                        (Math.random() - 0.5) * 4,
+                                        (Math.random() - 0.5) * 4
+                                    ]
+                                );
+                                particleSystem.emit(result.point, spread, [1, 0.75, 0.25], 0.6 + Math.random() * 1.2, 0.04 +
+                                    Math.random() * 0.1);
+                            }
+                        }
+                    }
+                    // Ground collision for rigid bodies
+                    for (const body of rigidBodies) {
+                        if (body.isStatic || body.sleeping) continue;
+                        const worldVerts = body.getWorldVertices();
+                        let minY = Infinity;
+                        let deepestVert = null;
+                        for (const v of worldVerts) {
+                            if (v[1] < minY) { minY = v[1];
+                                deepestVert = v; }
+                        }
+                        if (minY < groundY) {
+                            const penetration = groundY - minY;
+                            body.position[1] += penetration;
+                            if (body.velocity[1] < 0) {
+                                body.velocity[1] *= -body.restitution;
+                                // Friction on ground
+                                body.velocity[0] *= (1 - body.friction * 0.3);
+                                body.velocity[2] *= (1 - body.friction * 0.3);
+                                body.angularVelocity = v3Scale(body.angularVelocity, 0.85);
+                            }
+                            if (particleSystem && penetration > 0.1 && v3Len(body.velocity) > 0.5) {
+                                const nP = Math.floor(penetration * 8);
+                                for (let i = 0; i < nP; i++) {
+                                    particleSystem.emit(
+                                        [deepestVert[0] + (Math.random() - 0.5) * 0.8, groundY, deepestVert[2] + (Math
+                                            .random() - 0.5) * 0.8
+                                        ],
+                                        [(Math.random() - 0.5) * 2, Math.random() * 2.5, (Math.random() - 0.5) * 2],
+                                        [0.8, 0.7, 0.5], 0.4 + Math.random() * 0.8, 0.03 + Math.random() * 0.06
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                // Update particle system
+                if (particleSystem) particleSystem.update(dt, gravity);
+            }
+
+            // ──────────────────────────────────────────────
+            //  RENDERING
+            // ──────────────────────────────────────────────
+            function renderShadowPass() {
+                gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFBO);
+                gl.viewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
+                gl.clear(gl.DEPTH_BUFFER_BIT);
+                gl.enable(gl.DEPTH_TEST);
+                gl.depthFunc(gl.LESS);
+                gl.cullFace(gl.FRONT); // Reduce peter-panning
+
+                const lightView = m4LookAt(lightPos, lightTarget, lightUp);
+                const lightProj = m4Ortho(-18, 18, -18, 18, 0.5, 70);
+                const lightMVP = m4Multiply(lightProj, lightView);
+
+                gl.useProgram(shadowProg);
+                const uLightMVP = gl.getUniformLocation(shadowProg, 'uLightMVP');
+
+                for (const body of rigidBodies) {
+                    if (!body.renderMesh) continue;
+                    const modelMat = m4FromQuat(body.orientation);
+                    modelMat[12] = body.position[0];
+                    modelMat[13] = body.position[1];
+                    modelMat[14] = body.position[2];
+                    const mvp = m4Multiply(lightMVP, modelMat);
+                    gl.uniformMatrix4fv(uLightMVP, false, mvp);
+                    gl.bindVertexArray(body.renderMesh.vao);
+                    gl.drawArrays(gl.TRIANGLES, 0, body.renderMesh.vertexCount);
+                }
+                // Soft body shadow
+                if (softBody) {
+                    const renderData = softBody.getRenderVertices();
+                    if (renderData.vertexCount > 0) {
+                        const tempVao = createTempVAO(renderData);
+                        const mvp = m4Multiply(lightMVP, m4Identity());
+                        gl.uniformMatrix4fv(uLightMVP, false, mvp);
+                        gl.bindVertexArray(tempVao);
+                        gl.drawArrays(gl.TRIANGLES, 0, renderData.vertexCount);
+                        gl.deleteVertexArray(tempVao);
+                    }
+                }
+                gl.cullFace(gl.BACK);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            }
+
+            function createTempVAO(renderData) {
+                const vao = gl.createVertexArray();
+                gl.bindVertexArray(vao);
+                const interleaved = [];
+                for (let i = 0; i < renderData.positions.length / 3; i++) {
+                    interleaved.push(
+                        renderData.positions[i * 3], renderData.positions[i * 3 + 1], renderData.positions[i * 3 + 2],
+                        renderData.normals[i * 3], renderData.normals[i * 3 + 1], renderData.normals[i * 3 + 2]
+                    );
+                }
+                const vbo = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(interleaved), gl.DYNAMIC_DRAW);
+                gl.enableVertexAttribArray(0);
+                gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+                gl.enableVertexAttribArray(1);
+                gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+                gl.bindVertexArray(null);
+                vao.vertexCount = renderData.vertexCount;
+                return vao;
+            }
+
+            function renderMainPass(aspect) {
+                gl.viewport(0, 0, canvas.width, canvas.height);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                gl.enable(gl.DEPTH_TEST);
+                gl.depthFunc(gl.LESS);
+                gl.enable(gl.CULL_FACE);
+                gl.cullFace(gl.BACK);
+
+                const eye = getCameraEye();
+                const viewMat = m4LookAt(eye, camera.target, camera.up);
+                const projMat = m4Perspective(camera.fov, aspect, camera.near, camera.far);
+                const vpMat = m4Multiply(projMat, viewMat);
+
+                const lightView = m4LookAt(lightPos, lightTarget, lightUp);
+                const lightProj = m4Ortho(-18, 18, -18, 18, 0.5, 70);
+                const lightMVP = m4Multiply(lightProj, lightView);
+
+                // Render ground
+                gl.useProgram(groundProg);
+                const groundModel = m4Identity();
+                const groundMVP = m4Multiply(vpMat, groundModel);
+                gl.uniformMatrix4fv(gl.getUniformLocation(groundProg, 'uMVP'), false, groundMVP);
+                gl.uniformMatrix4fv(gl.getUniformLocation(groundProg, 'uLightMVP'), false, m4Multiply(lightMVP,
+                groundModel));
+                gl.uniform3fv(gl.getUniformLocation(groundProg, 'uViewPos'), eye);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, shadowTex);
+                gl.uniform1i(gl.getUniformLocation(groundProg, 'uShadowMap'), 0);
+                gl.bindVertexArray(groundVao);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+                // Render rigid bodies
+                gl.useProgram(mainProg);
+                gl.uniformMatrix4fv(gl.getUniformLocation(mainProg, 'uLightMVP'), false, lightMVP);
+                gl.uniform3fv(gl.getUniformLocation(mainProg, 'uLightDir'), lightDir);
+                gl.uniform3fv(gl.getUniformLocation(mainProg, 'uViewPos'), eye);
+                gl.uniform1f(gl.getUniformLocation(mainProg, 'uAmbient'), 0.22);
+                gl.uniform1f(gl.getUniformLocation(mainProg, 'uShininess'), 48);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, shadowTex);
+                gl.uniform1i(gl.getUniformLocation(mainProg, 'uShadowMap'), 0);
+                const uMVP = gl.getUniformLocation(mainProg, 'uMVP');
+                const uModel = gl.getUniformLocation(mainProg, 'uModel');
+                const uColor = gl.getUniformLocation(mainProg, 'uColor');
+
+                for (const body of rigidBodies) {
+                    if (!body.renderMesh) continue;
+                    const modelMat = m4FromQuat(body.orientation);
+                    modelMat[12] = body.position[0];
+                    modelMat[13] = body.position[1];
+                    modelMat[14] = body.position[2];
+                    const mvp = m4Multiply(vpMat, modelMat);
+                    gl.uniformMatrix4fv(uMVP, false, mvp);
+                    gl.uniformMatrix4fv(uModel, false, modelMat);
+                    gl.uniform3fv(uColor, body.color);
+                    gl.bindVertexArray(body.renderMesh.vao);
+                    gl.drawArrays(gl.TRIANGLES, 0, body.renderMesh.vertexCount);
+                }
+
+                // Render soft body
+                if (softBody) {
+                    const renderData = softBody.getRenderVertices();
+                    if (renderData.vertexCount > 0) {
+                        const tempVao = createTempVAO(renderData);
+                        const modelMat = m4Identity();
+                        const mvp = m4Multiply(vpMat, modelMat);
+                        gl

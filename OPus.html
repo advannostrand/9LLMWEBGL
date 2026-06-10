@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>WebGL2 Complex Geometry Physics Lab</title>
+<style>
+  :root{
+    --panel:#12151c; --panel2:#1b2030; --txt:#e7ecf5; --muted:#8b93a7;
+    --accent:#5ec8ff; --accent2:#ff7a59; --line:#2a3142;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#05070c;color:var(--txt);
+    font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
+  #gl{position:fixed;inset:0;display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+  #gl.grabbing{cursor:grabbing}
+  /* ---- Control panel ---- */
+  #ui{position:fixed;top:14px;left:14px;width:280px;max-height:calc(100% - 28px);overflow:auto;
+    background:linear-gradient(180deg,rgba(18,21,28,.96),rgba(14,17,24,.96));
+    border:1px solid var(--line);border-radius:14px;padding:14px 14px 16px;
+    backdrop-filter:blur(8px);box-shadow:0 18px 50px rgba(0,0,0,.55);user-select:none;z-index:10}
+  #ui h1{font-size:14px;letter-spacing:.4px;margin:0 0 2px;font-weight:700}
+  #ui .sub{font-size:11px;color:var(--muted);margin-bottom:12px}
+  .group{margin:12px 0;padding-top:12px;border-top:1px solid var(--line)}
+  .group:first-of-type{border-top:0;padding-top:0;margin-top:6px}
+  .lbl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin:10px 0 5px}
+  .lbl b{color:var(--txt);font-variant-numeric:tabular-nums;font-weight:600}
+  input[type=range]{-webkit-appearance:none;width:100%;height:5px;border-radius:6px;
+    background:linear-gradient(90deg,var(--accent),#2b3b52);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:#eaf4ff;border:2px solid var(--accent);cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:#eaf4ff;
+    border:2px solid var(--accent);cursor:pointer}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  button{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:9px 8px;cursor:pointer;font-size:12px;transition:.15s;font-weight:600}
+  button:hover{border-color:var(--accent);background:#222a3d}
+  button.active{background:var(--accent);color:#06121c;border-color:var(--accent)}
+  button.warn{border-color:#5a2d24}
+  button.warn:hover{border-color:var(--accent2);background:#33201b}
+  .preset{font-size:11.5px;padding:9px 6px}
+  .hint{font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:10px}
+  /* ---- HUD ---- */
+  #hud{position:fixed;top:14px;right:14px;background:rgba(14,17,24,.86);border:1px solid var(--line);
+    border-radius:10px;padding:8px 12px;font-size:12px;font-variant-numeric:tabular-nums;z-index:10;
+    min-width:120px}
+  #hud .fps{font-size:20px;font-weight:700;color:var(--accent)}
+  #hud .meta{color:var(--muted);font-size:10.5px;margin-top:2px}
+  .badge{display:inline-block;font-size:10px;color:#06121c;background:var(--accent2);
+    padding:1px 6px;border-radius:6px;font-weight:700;margin-left:6px}
+  @media (max-width:560px){#ui{width:240px}}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<!-- ====================== UI PANEL ====================== -->
+<div id="ui">
+  <h1>Geometry Physics Lab <span class="badge">WebGL2</span></h1>
+  <div class="sub">XPBD · shape-matching · soft bodies · shadows</div>
+
+  <div class="group">
+    <div class="lbl"><span>Scenes</span></div>
+    <div class="row3">
+      <button class="preset" data-preset="rigid">Rigid<br>Collapse</button>
+      <button class="preset" data-preset="soft">Soft<br>Deform</button>
+      <button class="preset" data-preset="destruct">Destr-<br>uction</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="lbl"><span>Gravity</span><b id="vGrav">12.0</b></div>
+    <input id="sGrav" type="range" min="0" max="30" step="0.1" value="12">
+    <div class="lbl"><span>Stiffness</span><b id="vStiff">1.00</b></div>
+    <input id="sStiff" type="range" min="0" max="1" step="0.01" value="1">
+    <div class="lbl"><span>Damping</span><b id="vDamp">0.04</b></div>
+    <input id="sDamp" type="range" min="0" max="1" step="0.01" value="0.04">
+    <div class="lbl"><span>Friction</span><b id="vFric">0.65</b></div>
+    <input id="sFric" type="range" min="0" max="1" step="0.01" value="0.65">
+    <div class="lbl"><span>Restitution</span><b id="vRest">0.12</b></div>
+    <input id="sRest" type="range" min="0" max="0.95" step="0.01" value="0.12">
+  </div>
+
+  <div class="group">
+    <div class="row">
+      <button id="bPlay" class="active">⏸ Pause</button>
+      <button id="bWire">◫ Wireframe</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="bReset">↺ Reset Scene</button>
+      <button id="bShadow" class="active">☀ Shadows</button>
+    </div>
+  </div>
+
+  <div class="hint">
+    <b>Drag</b> empty space to orbit · <b>scroll</b> to zoom.<br>
+    <b>Click + drag</b> a body to grab and <b>fling</b> it on release.<br>
+    Keys: <b>Space</b> pause · <b>W</b> wireframe · <b>R</b> reset.
+  </div>
+</div>
+
+<!-- ====================== HUD ====================== -->
+<div id="hud">
+  <div class="fps"><span id="fps">60</span> fps</div>
+  <div class="meta"><span id="pcount">0</span> particles · <span id="cstate">running</span></div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================================
+   COMPLEX GEOMETRY PHYSICS LAB — single file, vanilla WebGL2
+   -------------------------------------------------------------------------------------
+   ARCHITECTURE
+     • A unified particle solver (Position Based Dynamics / XPBD with sub-stepping).
+       Every body is a cloud of particles. Behaviour is decided by which CONSTRAINTS
+       bind those particles together:
+         - SHAPE MATCHING  -> rigid bodies (irregular polyhedra, cubes). A cluster is
+                              pulled back toward its best-fit rotated rest shape every
+                              sub-step; stiffness ~1 = perfectly rigid, lower = squishy.
+         - DISTANCE CONSTR.-> soft bodies (springy lumpy blobs) and breakable "welds"
+                              for destruction (chunks held together until impact).
+     • Collisions: ground plane + particle/particle (sphere clouds) via a spatial hash.
+       Restitution + Coulomb-ish friction are applied at the velocity level using the
+       pre-solve normal velocity (the "small steps" approach, Müller et al.).
+     • Rendering: WebGL2, Blinn–Phong + directional light + PCF shadow map (depth FBO).
+       Rigid render meshes are STATIC buffers transformed by a per-body model matrix
+       (rotation+translation from the matched cluster). Soft meshes stream vertex
+       positions/normals each frame.
+   ===================================================================================== */
+
+/* ============================ small vector / matrix math ============================ */
+// All 4x4 matrices are COLUMN-MAJOR (the layout WebGL's uniformMatrix4fv expects).
+const V = {
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],
+  scale:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+  len:a=>Math.hypot(a[0],a[1],a[2]),
+  norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l];}
+};
+function m4mul(a,b){ // column-major a*b
+  const o=new Float32Array(16);
+  for(let c=0;c<4;c++)for(let r=0;r<4;r++)
+    o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
+  return o;
+}
+function m4perspective(fovy,aspect,n,f){
+  const t=1/Math.tan(fovy/2), nf=1/(n-f), o=new Float32Array(16);
+  o[0]=t/aspect; o[5]=t; o[10]=(f+n)*nf; o[11]=-1; o[14]=2*f*n*nf; return o;
+}
+function m4ortho(l,r,b,t,n,f){
+  const o=new Float32Array(16);
+  o[0]=2/(r-l); o[5]=2/(t-b); o[10]=-2/(f-n);
+  o[12]=-(r+l)/(r-l); o[13]=-(t+b)/(t-b); o[14]=-(f+n)/(f-n); o[15]=1; return o;
+}
+function m4lookAt(eye,center,up){
+  const z=V.norm(V.sub(eye,center)), x=V.norm(V.cross(up,z)), y=V.cross(z,x), o=new Float32Array(16);
+  o[0]=x[0];o[1]=y[0];o[2]=z[0];o[4]=x[1];o[5]=y[1];o[6]=z[1];
+  o[8]=x[2];o[9]=y[2];o[10]=z[2];o[12]=-V.dot(x,eye);o[13]=-V.dot(y,eye);o[14]=-V.dot(z,eye);o[15]=1;
+  return o;
+}
+function m4identity(){const o=new Float32Array(16);o[0]=o[5]=o[10]=o[15]=1;return o;}
+// Build a model matrix from a 3x3 rotation (col-major) and a translation vector.
+function m4fromRT(R,t){
+  const o=new Float32Array(16);
+  o[0]=R[0];o[1]=R[1];o[2]=R[2];
+  o[4]=R[3];o[5]=R[4];o[6]=R[5];
+  o[8]=R[6];o[9]=R[7];o[10]=R[8];
+  o[12]=t[0];o[13]=t[1];o[14]=t[2];o[15]=1; return o;
+}
+function m4invert(m){ // generic 4x4 inverse (for unprojecting mouse rays)
+  const a=m, o=new Float32Array(16);
+  const a00=a[0],a01=a[1],a02=a[2],a03=a[3],a10=a[4],a11=a[5],a12=a[6],a13=a[7];
+  const a20=a[8],a21=a[9],a22=a[10],a23=a[11],a30=a[12],a31=a[13],a32=a[14],a33=a[15];
+  const b00=a00*a11-a01*a10,b01=a00*a12-a02*a10,b02=a00*a13-a03*a10,b03=a01*a12-a02*a11;
+  const b04=a01*a13-a03*a11,b05=a02*a13-a03*a12,b06=a20*a31-a21*a30,b07=a20*a32-a22*a30;
+  const b08=a20*a33-a23*a30,b09=a21*a32-a22*a31,b10=a21*a33-a23*a31,b11=a22*a33-a23*a32;
+  let d=b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06; if(!d)return m4identity(); d=1/d;
+  o[0]=(a11*b11-a12*b10+a13*b09)*d;o[1]=(a02*b10-a01*b11-a03*b09)*d;o[2]=(a31*b05-a32*b04+a33*b03)*d;
+  o[3]=(a22*b04-a21*b05-a23*b03)*d;o[4]=(a12*b08-a10*b11-a13*b07)*d;o[5]=(a00*b11-a02*b08+a03*b07)*d;
+  o[6]=(a32*b02-a30*b05-a33*b01)*d;o[7]=(a20*b05-a22*b02+a23*b01)*d;o[8]=(a10*b10-a11*b08+a13*b06)*d;
+  o[9]=(a01*b08-a00*b10-a03*b06)*d;o[10]=(a30*b04-a31*b02+a33*b00)*d;o[11]=(a21*b02-a20*b04-a23*b00)*d;
+  o[12]=(a11*b07-a10*b09-a12*b06)*d;o[13]=(a00*b09-a01*b07+a02*b06)*d;o[14]=(a31*b01-a30*b03-a32*b00)*d;
+  o[15]=(a20*b03-a21*b01+a22*b00)*d; return o;
+}
+function m4mulVec4(m,v){ // column-major * vec4
+  return [m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3],
+          m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3],
+          m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3],
+          m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]];
+}
+// Quaternion -> 3x3 rotation (column-major: columns are the rotated basis axes).
+function quatToMat3(q){
+  const x=q[0],y=q[1],z=q[2],w=q[3];
+  const xx=x*x,yy=y*y,zz=z*z,xy=x*y,xz=x*z,yz=y*z,wx=w*x,wy=w*y,wz=w*z;
+  const m=new Float32Array(9);
+  m[0]=1-2*(yy+zz); m[1]=2*(xy+wz);   m[2]=2*(xz-wy);
+  m[3]=2*(xy-wz);   m[4]=1-2*(xx+zz); m[5]=2*(yz+wx);
+  m[6]=2*(xz+wy);   m[7]=2*(yz-wx);   m[8]=1-2*(xx+yy);
+  return m;
+}
+function quatMul(a,b){ // Hamilton product a∘b
+  return [a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],
+          a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],
+          a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],
+          a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]];
+}
+
+/* ============================================================================
+   extractRotation — robust polar-decomposition via quaternion iteration
+   (Müller, "A Robust Method to Extract the Rotational Part of Deformations").
+   Given the deformation/covariance matrix A (its three COLUMNS), refine the
+   quaternion `q` so that quatToMat3(q) is the best-fit pure rotation of A.
+   Warm-started with the previous frame's quaternion -> usually 1-3 iterations.
+   ============================================================================ */
+function extractRotation(A,q){
+  for(let it=0;it<24;it++){
+    const R=quatToMat3(q);
+    const r0x=R[0],r0y=R[1],r0z=R[2], r1x=R[3],r1y=R[4],r1z=R[5], r2x=R[6],r2y=R[7],r2z=R[8];
+    const a0x=A[0],a0y=A[1],a0z=A[2], a1x=A[3],a1y=A[4],a1z=A[5], a2x=A[6],a2y=A[7],a2z=A[8];
+    // omega = ( r0×a0 + r1×a1 + r2×a2 ) / |r0·a0 + r1·a1 + r2·a2|
+    let ox=(r0y*a0z-r0z*a0y)+(r1y*a1z-r1z*a1y)+(r2y*a2z-r2z*a2y);
+    let oy=(r0z*a0x-r0x*a0z)+(r1z*a1x-r1x*a1z)+(r2z*a2x-r2x*a2z);
+    let oz=(r0x*a0y-r0y*a0x)+(r1x*a1y-r1y*a1x)+(r2x*a2y-r2y*a2x);
+    const den=Math.abs(r0x*a0x+r0y*a0y+r0z*a0z + r1x*a1x+r1y*a1y+r1z*a1z + r2x*a2x+r2y*a2y+r2z*a2z)+1e-9;
+    ox/=den; oy/=den; oz/=den;
+    const w=Math.hypot(ox,oy,oz);
+    if(w<1e-9) break;
+    const half=w*0.5, s=Math.sin(half)/w, c=Math.cos(half);
+    const dq=[ox*s,oy*s,oz*s,c];           // incremental rotation
+    const nq=quatMul(dq,q);
+    const l=Math.hypot(nq[0],nq[1],nq[2],nq[3])||1;
+    q[0]=nq[0]/l; q[1]=nq[1]/l; q[2]=nq[2]/l; q[3]=nq[3]/l;
+  }
+}
+
+/* ============================ procedural geometry ============================ */
+function icosahedronBase(){
+  const t=(1+Math.sqrt(5))/2;
+  let v=[[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],
+         [0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]];
+  v=v.map(p=>{const l=Math.hypot(p[0],p[1],p[2]);return[p[0]/l,p[1]/l,p[2]/l];});
+  const f=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],
+           [10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],
+           [2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+  return {v,f};
+}
+// Subdivided unit icosphere -> {verts:[[x,y,z]...], faces:[[a,b,c]...]}
+function icosphere(order){
+  let {v,f}=icosahedronBase();
+  let verts=v.map(p=>p.slice()), faces=f.map(t=>t.slice());
+  for(let o=0;o<order;o++){
+    const mid=new Map(), nf=[];
+    const midpoint=(a,b)=>{
+      const key=a<b?a*1e5+b:b*1e5+a;
+      if(mid.has(key))return mid.get(key);
+      const pa=verts[a],pb=verts[b];
+      let m=[(pa[0]+pb[0])/2,(pa[1]+pb[1])/2,(pa[2]+pb[2])/2];
+      const l=Math.hypot(m[0],m[1],m[2]); m=[m[0]/l,m[1]/l,m[2]/l];
+      const i=verts.length; verts.push(m); mid.set(key,i); return i;
+    };
+    for(const [a,b,c] of faces){
+      const ab=midpoint(a,b),bc=midpoint(b,c),ca=midpoint(c,a);
+      nf.push([a,ab,ca],[b,bc,ab],[c,ca,bc],[ab,bc,ca]);
+    }
+    faces=nf;
+  }
+  return {verts,faces};
+}
+// Smooth pseudo-noise that makes a sphere "lumpy" (organic, bunny-like blobs).
+function lump(d,seed){
+  return 1
+    + 0.20*Math.sin(2.3*d[0]+1.7+seed)*Math.sin(2.9*d[1]+0.6+seed)
+    + 0.13*Math.sin(3.6*d[2]+2.1+seed*1.3)
+    + 0.07*Math.sin(5.1*d[0]+0.3)*Math.cos(4.2*d[1]+seed);
+}
+// Build a faceted irregular gem (flat shading). Returns local-space collision points
+// (with per-point radii) plus an expanded render mesh.
+function makeGem(size,seed){
+  const {v,f}=icosahedronBase();
+  const verts=v.map(d=>{const r=size*(0.78+0.34*(lump(d,seed)-1+1)*0.5+0.18*Math.sin(seed+d[0]*5));
+                        return [d[0]*r,d[1]*r,d[2]*r];});
+  // Collision spheres: every vertex (small) + a big central sphere giving the body volume.
+  const collision=[{p:[0,0,0],r:size*0.55}];
+  for(const p of verts) collision.push({p:p.slice(),r:size*0.14});
+  // Render: expand each triangle to 3 verts with a flat face normal (crisp facets).
+  const pos=[],nor=[],idx=[]; let vi=0;
+  for(const [a,b,c] of f){
+    const A=verts[a],B=verts[b],C=verts[c];
+    const n=V.norm(V.cross(V.sub(B,A),V.sub(C,A)));
+    pos.push(...A,...B,...C); nor.push(...n,...n,...n);
+    idx.push(vi,vi+1,vi+2); vi+=3;
+  }
+  return {collision,pos,nor,idx};
+}
+// Axis-aligned cube chunk (for the destruction wall).
+function makeCube(half){
+  const s=half;
+  const c=[[-s,-s,-s],[s,-s,-s],[s,s,-s],[-s,s,-s],[-s,-s,s],[s,-s,s],[s,s,s],[-s,s,s]];
+  const collision=[{p:[0,0,0],r:half*0.95}];
+  for(const p of c) collision.push({p:p.slice(),r:half*0.30});
+  // faces: each face -> 4 verts (flat normal) + 2 tris
+  const faces=[ [0,1,2,3,[0,0,-1]],[5,4,7,6,[0,0,1]],[4,0,3,7,[-1,0,0]],
+                [1,5,6,2,[1,0,0]],[3,2,6,7,[0,1,0]],[4,5,1,0,[0,-1,0]] ];
+  const pos=[],nor=[],idx=[]; let vi=0;
+  for(const fc of faces){
+    const [a,b,cc,d,n]=fc;
+    pos.push(...c[a],...c[b],...c[cc],...c[d]);
+    nor.push(...n,...n,...n,...n);
+    idx.push(vi,vi+1,vi+2, vi,vi+2,vi+3); vi+=4;
+  }
+  return {collision,pos,nor,idx};
+}
+
+/* =====================================================================================
+   WORLD — the particle system + constraints + collision + rendering bookkeeping.
+   ===================================================================================== */
+class World{
+  constructor(){ this.reset(); }
+  reset(){
+    // Structure-of-Arrays particle store (filled at finalize()).
+    this.px=this.py=this.pz=null;     // current/predicted positions
+    this.ppx=this.ppy=this.ppz=null;  // positions at start of sub-step (for velocity)
+    this.vx=this.vy=this.vz=null;     // velocities
+    this.vix=this.viy=this.viz=null;  // velocity captured right after integration (pre-solve)
+    this.rad=null; this.body=null;    // collision radius, owning body id
+    this.N=0; this.maxR=0.5;
+    // Builders (plain arrays during scene construction).
+    this._p=[]; this._r=[]; this._b=[]; this._v=[];
+    this.constraints=[];   // {i,j,rest,kind,broken}
+    this.clusters=[];      // {idx,rest(Float32),quat(Float32),com(Float32)}
+    this.bodies=[];        // {type,pIndices,cluster,mesh,color}
+  }
+  // Add one particle, return its index.
+  _addP(p,r,b,v){ const i=this._p.length/3; this._p.push(p[0],p[1],p[2]);
+    this._r.push(r); this._b.push(b); this._v.push(v?v[0]:0,v?v[1]:0,v?v[2]:0); return i; }
+
+  // ---- RIGID body (shape-matched cluster + static render mesh) ----
+  addRigid(geo,spawn,color,vel){
+    const bid=this.bodies.length;
+    // restCom = average of collision points (local). Particles placed at spawn+local.
+    let cx=0,cy=0,cz=0;
+    for(const c of geo.collision){cx+=c.p[0];cy+=c.p[1];cz+=c.p[2];}
+    const k=geo.collision.length; cx/=k;cy/=k;cz/=k;
+    const idx=[], rest=new Float32Array(k*3);
+    for(let a=0;a<k;a++){
+      const c=geo.collision[a];
+      const world=[c.p[0]+spawn[0],c.p[1]+spawn[1],c.p[2]+spawn[2]];
+      const id=this._addP(world,c.r,bid,vel); idx.push(id);
+      rest[a*3]=c.p[0]-cx; rest[a*3+1]=c.p[1]-cy; rest[a*3+2]=c.p[2]-cz; // centered rest shape
+    }
+    const cluster={idx:Int32Array.from(idx),rest,quat:Float32Array.from([0,0,0,1]),com:new Float32Array(3)};
+    this.clusters.push(cluster);
+    // Render mesh stored in cluster-local space (centered at the same restCom).
+    const rp=new Float32Array(geo.pos.length);
+    for(let a=0;a<geo.pos.length;a+=3){rp[a]=geo.pos[a]-cx;rp[a+1]=geo.pos[a+1]-cy;rp[a+2]=geo.pos[a+2]-cz;}
+    const mesh=GL.makeMesh(rp,Float32Array.from(geo.nor),geo.idx,false);
+    this.bodies.push({type:'rigid',pIndices:idx,cluster,mesh,color});
+    return this.bodies.length-1;
+  }
+  // ---- SOFT body (distance-constrained lumpy blob; verts ARE particles) ----
+  addSoft(size,spawn,color,vel,seed){
+    const bid=this.bodies.length;
+    const {verts,faces}=icosphere(1);
+    const local=verts.map(d=>{const r=size*lump(d,seed); return [d[0]*r,d[1]*r,d[2]*r];});
+    const idx=[];
+    for(const p of local){
+      const w=[p[0]+spawn[0],p[1]+spawn[1],p[2]+spawn[2]];
+      idx.push(this._addP(w,size*0.14,bid,vel));
+    }
+    // Interior centroid particle keeps the blob inflated (acts like a volume spring).
+    const cId=this._addP(spawn,size*0.05,bid,vel);
+    // Unique surface edges -> distance constraints; plus spokes to the centroid.
+    const seen=new Set();
+    const edge=(a,b)=>{const key=a<b?a*1e5+b:b*1e5+a; if(seen.has(key))return; seen.add(key);
+      const i=idx[a],j=idx[b]; this.constraints.push({i,j,rest:this._dist(i,j),kind:'soft',broken:false});};
+    for(const [a,b,c] of faces){edge(a,b);edge(b,c);edge(c,a);}
+    for(let a=0;a<idx.length;a++)
+      this.constraints.push({i:idx[a],j:cId,rest:this._dist(idx[a],cId),kind:'soft',broken:false});
+    // Soft render mesh: positions/normals streamed each frame from particle state.
+    const initPos=new Float32Array(local.length*3);
+    for(let a=0;a<local.length;a++){initPos[a*3]=local[a][0]+spawn[0];initPos[a*3+1]=local[a][1]+spawn[1];initPos[a*3+2]=local[a][2]+spawn[2];}
+    const tri=[]; for(const f of faces) tri.push(f[0],f[1],f[2]);
+    const mesh=GL.makeMesh(initPos,new Float32Array(local.length*3),tri,true);
+    mesh.vmap=Int32Array.from(idx);        // which particle each render vertex follows
+    mesh.tri=tri;
+    this.bodies.push({type:'soft',pIndices:idx.concat([cId]),cluster:null,mesh,color});
+    return this.bodies.length-1;
+  }
+  _dist(i,j){const p=this._p;return Math.hypot(p[i*3]-p[j*3],p[i*3+1]-p[j*3+1],p[i*3+2]-p[j*3+2]);}
+
+  // Add a breakable weld between two particles (used to glue destruction chunks).
+  addWeld(i,j){ this.constraints.push({i,j,rest:this._dist(i,j),kind:'weld',broken:false}); }
+
+  // Pack builder arrays into typed arrays + finish GPU resources.
+  finalize(){
+    this.N=this._p.length/3;
+    const N=this.N;
+    this.px=new Float32Array(N);this.py=new Float32Array(N);this.pz=new Float32Array(N);
+    this.ppx=new Float32Array(N);this.ppy=new Float32Array(N);this.ppz=new Float32Array(N);
+    this.vx=new Float32Array(N);this.vy=new Float32Array(N);this.vz=new Float32Array(N);
+    this.vix=new Float32Array(N);this.viy=new Float32Array(N);this.viz=new Float32Array(N);
+    this.rad=new Float32Array(N);this.body=new Int32Array(N);
+    this.maxR=0.001;
+    for(let i=0;i<N;i++){
+      this.px[i]=this._p[i*3];this.py[i]=this._p[i*3+1];this.pz[i]=this._p[i*3+2];
+      this.vx[i]=this._v[i*3];this.vy[i]=this._v[i*3+1];this.vz[i]=this._v[i*3+2];
+      this.rad[i]=this._r[i];this.body[i]=this._b[i];
+      if(this._r[i]>this.maxR)this.maxR=this._r[i];
+    }
+    this.cell=this.maxR*2.0;            // spatial-hash cell size = collision diameter
+    this._p=this._r=this._b=this._v=null;
+  }
+
+  /* ============================ THE PHYSICS STEP ============================ */
+  step(dt,prm){
+    // Clamp & sub-step. Many tiny steps (Müller "Small Steps in Physics Simulation")
+    // make stiff shape-matching and stacking stable without large iteration counts.
+    dt=Math.min(dt,1/30);
+    const sub=10, h=dt/sub;
+    // Map the stiffness slider to BOTH rigid shape-match stiffness AND soft compliance.
+    const shapeStiff=prm.stiff;                          // 0..1, applied directly to clusters
+    const softComp=(1.05-prm.stiff)*0.02+0.0008;         // higher slider -> stiffer springs
+    const damp=prm.damp*0.10;                            // velocity damping per sub-step
+    const g=prm.grav;
+    for(let s=0;s<sub;s++) this._substep(h,g,damp,shapeStiff,softComp,prm);
+  }
+
+  _substep(h,g,damp,shapeStiff,softComp,prm){
+    const {px,py,pz,ppx,ppy,ppz,vx,vy,vz,vix,viy,viz,rad,body,N}=this;
+    // 1) INTEGRATE: apply gravity, damping; remember pre-solve state & velocity.
+    for(let i=0;i<N;i++){
+      vy[i]-=g*h;
+      vx[i]*=(1-damp); vy[i]*=(1-damp); vz[i]*=(1-damp);
+      vix[i]=vx[i]; viy[i]=vy[i]; viz[i]=vz[i];     // pre-solve velocity (for restitution)
+      ppx[i]=px[i]; ppy[i]=py[i]; ppz[i]=pz[i];
+      px[i]+=vx[i]*h; py[i]+=vy[i]*h; pz[i]+=vz[i]*h; // predicted positions
+    }
+    // 2) GRAB constraint: pull the grabbed body toward the mouse target point.
+    if(grab.body){
+      const b=grab.body; let cx=0,cy=0,cz=0; const n=b.pIndices.length;
+      for(const i of b.pIndices){cx+=px[i];cy+=py[i];cz+=pz[i];}
+      cx/=n;cy/=n;cz/=n;
+      const k=0.35;
+      const dx=(grab.target[0]-cx)*k, dy=(grab.target[1]-cy)*k, dz=(grab.target[2]-cz)*k;
+      for(const i of b.pIndices){px[i]+=dx;py[i]+=dy;pz[i]+=dz;} // velocity emerges from Δposition
+    }
+    // 3) SHAPE-MATCHING (rigid clusters): pull particles toward best-fit rotated rest shape.
+    for(const cl of this.clusters) this._solveCluster(cl,shapeStiff);
+    // 4) DISTANCE CONSTRAINTS (soft springs + breakable welds), XPBD form.
+    for(const c of this.constraints) this._solveDistance(c,h,softComp);
+    // 5) COLLISIONS (positional) + record contacts for the velocity pass.
+    const contacts=this._collide();
+    // 6) UPDATE VELOCITIES from the position change this sub-step.
+    const inv=1/h;
+    for(let i=0;i<N;i++){vx[i]=(px[i]-ppx[i])*inv; vy[i]=(py[i]-ppy[i])*inv; vz[i]=(pz[i]-ppz[i])*inv;}
+    // 7) VELOCITY pass: restitution (bounce) + Coulomb-ish friction, using pre-solve vel.
+    this._solveVelocities(contacts,prm);
+    // 8) Safety clamp so nothing explodes.
+    for(let i=0;i<N;i++){
+      const sp=Math.hypot(vx[i],vy[i],vz[i]);
+      if(sp>70){const f=70/sp;vx[i]*=f;vy[i]*=f;vz[i]*=f;}
+    }
+  }
+
+  // --- Shape matching: covariance Apq -> rotation R -> goal = R*restLocal + com ---
+  _solveCluster(cl,stiff){
+    const {px,py,pz}=this; const idx=cl.idx,k=idx.length,rest=cl.rest;
+    let cx=0,cy=0,cz=0;
+    for(let a=0;a<k;a++){const i=idx[a];cx+=px[i];cy+=py[i];cz+=pz[i];}
+    cx/=k;cy/=k;cz/=k; cl.com[0]=cx;cl.com[1]=cy;cl.com[2]=cz;
+    // Apq columns (uniform mass): column j = Σ (p-com) * restLocal[j]
+    let a0x=0,a0y=0,a0z=0,a1x=0,a1y=0,a1z=0,a2x=0,a2y=0,a2z=0;
+    for(let a=0;a<k;a++){
+      const i=idx[a];
+      const dx=px[i]-cx, dy=py[i]-cy, dz=pz[i]-cz;
+      const qx=rest[a*3],qy=rest[a*3+1],qz=rest[a*3+2];
+      a0x+=dx*qx;a0y+=dy*qx;a0z+=dz*qx;
+      a1x+=dx*qy;a1y+=dy*qy;a1z+=dz*qy;
+      a2x+=dx*qz;a2y+=dy*qz;a2z+=dz*qz;
+    }
+    extractRotation([a0x,a0y,a0z,a1x,a1y,a1z,a2x,a2y,a2z],cl.quat); // warm-started
+    const R=quatToMat3(cl.quat);
+    for(let a=0;a<k;a++){
+      const i=idx[a]; const qx=rest[a*3],qy=rest[a*3+1],qz=rest[a*3+2];
+      const gx=R[0]*qx+R[3]*qy+R[6]*qz+cx;
+      const gy=R[1]*qx+R[4]*qy+R[7]*qz+cy;
+      const gz=R[2]*qx+R[5]*qy+R[8]*qz+cz;
+      px[i]+=(gx-px[i])*stiff; py[i]+=(gy-py[i])*stiff; pz[i]+=(gz-pz[i])*stiff;
+    }
+  }
+
+  // --- XPBD distance constraint (both particles invMass = 1) ---
+  _solveDistance(c,h,softComp){
+    if(c.broken)return;
+    const {px,py,pz}=this; const i=c.i,j=c.j;
+    let dx=px[i]-px[j],dy=py[i]-py[j],dz=pz[i]-pz[j];
+    let d=Math.hypot(dx,dy,dz); if(d<1e-6)return;
+    // Welds shatter once stretched past an absolute threshold -> destruction.
+    if(c.kind==='weld' && d-c.rest>0.22){c.broken=true;return;}
+    const compliance=(c.kind==='weld')?1e-6:softComp;
+    const alpha=compliance/(h*h);          // XPBD: stiffness expressed as compliance/dt^2
+    const C=d-c.rest;
+    const dl=-C/(2.0+alpha);               // w = invMassI+invMassJ = 2
+    const s=dl/d;
+    px[i]+=dx*s;py[i]+=dy*s;pz[i]+=dz*s;
+    px[j]-=dx*s;py[j]-=dy*s;pz[j]-=dz*s;
+  }
+
+  // --- Positional collisions: ground plane + particle/particle via spatial hash ---
+  _collide(){
+    const {px,py,pz,rad,body,N,cell}=this;
+    const contacts=[];
+    // Ground: y >= radius (floor at y=0).
+    for(let i=0;i<N;i++){ const r=rad[i];
+      if(py[i]<r){ py[i]=r; contacts.push({i,j:-1}); } // j=-1 marks a ground contact
+    }
+    // Spatial hash: bucket particles, then test 3x3x3 neighbourhood.
+    const inv=1/cell, grid=new Map();
+    const key=(x,y,z)=>((x*73856093)^(y*19349663)^(z*83492791))>>>0;
+    for(let i=0;i<N;i++){
+      const cxk=Math.floor(px[i]*inv),cyk=Math.floor(py[i]*inv),czk=Math.floor(pz[i]*inv);
+      const kk=key(cxk,cyk,czk); let arr=grid.get(kk); if(!arr){arr=[];grid.set(kk,arr);} arr.push(i);
+    }
+    for(let i=0;i<N;i++){
+      const ri=rad[i], bi=body[i];
+      const cxk=Math.floor(px[i]*inv),cyk=Math.floor(py[i]*inv),czk=Math.floor(pz[i]*inv);
+      for(let ox=-1;ox<=1;ox++)for(let oy=-1;oy<=1;oy++)for(let oz=-1;oz<=1;oz++){
+        const arr=grid.get(key(cxk+ox,cyk+oy,czk+oz)); if(!arr)continue;
+        for(let a=0;a<arr.length;a++){
+          const j=arr[a];
+          if(j<=i)continue;                 // each unordered pair handled exactly once
+          if(body[j]===bi)continue;         // ignore self-collision within a body
+          let dx=px[i]-px[j],dy=py[i]-py[j],dz=pz[i]-pz[j];
+          let d2=dx*dx+dy*dy+dz*dz; const rr=ri+rad[j];
+          if(d2>=rr*rr||d2<1e-12)continue;
+          const d=Math.sqrt(d2), pen=(rr-d)*0.5, nx=dx/d,ny=dy/d,nz=dz/d;
+          px[i]+=nx*pen;py[i]+=ny*pen;pz[i]+=nz*pen;       // separate equally
+          px[j]-=nx*pen;py[j]-=ny*pen;pz[j]-=nz*pen;
+          contacts.push({i,j,nx,ny,nz});
+        }
+      }
+    }
+    return contacts;
+  }
+
+  // --- Velocity-level restitution + friction (the part that makes things bounce/slide) ---
+  _solveVelocities(contacts,prm){
+    const {vx,vy,vz,vix,viy,viz,px,py,pz}=this;
+    const e=prm.rest, fr=prm.fric, SPARK=5.0;            // spark when impact speed exceeds this
+    for(const c of contacts){
+      if(c.j<0){ // ----- ground contact, normal = +Y -----
+        const i=c.i;
+        const vn=vy[i], vnPre=viy[i];                    // current vs pre-solve normal velocity
+        const desired=-e*Math.min(vnPre,0);              // restitution bounces back a fraction
+        vy[i]+=(desired-vn);                             // set normal velocity to target
+        vx[i]*=(1-fr); vz[i]*=(1-fr);                    // kinetic friction on the tangent plane
+        if(-vnPre>SPARK) Sparks.burst(px[i],py[i],pz[i],0,1,0,-vnPre);
+      } else { // ----- particle/particle contact -----
+        const i=c.i,j=c.j,nx=c.nx,ny=c.ny,nz=c.nz;
+        const rvx=vx[i]-vx[j],rvy=vy[i]-vy[j],rvz=vz[i]-vz[j];
+        const vn=rvx*nx+rvy*ny+rvz*nz;
+        const vnPre=(vix[i]-vix[j])*nx+(viy[i]-viy[j])*ny+(viz[i]-viz[j])*nz;
+        const desired=-e*Math.min(vnPre,0);
+        const dvn=(desired-vn)*0.5;                      // split equally (equal mass)
+        vx[i]+=dvn*nx;vy[i]+=dvn*ny;vz[i]+=dvn*nz;
+        vx[j]-=dvn*nx;vy[j]-=dvn*ny;vz[j]-=dvn*nz;
+        // tangential friction
+        const tvx=rvx-vn*nx,tvy=rvy-vn*ny,tvz=rvz-vn*nz, f=fr*0.5;
+        vx[i]-=tvx*f;vy[i]-=tvy*f;vz[i]-=tvz*f;
+        vx[j]+=tvx*f;vy[j]+=tvy*f;vz[j]+=tvz*f;
+        if(-vnPre>SPARK) Sparks.burst((px[i]+px[j])/2,(py[i]+py[j])/2,(pz[i]+pz[j])/2,nx,ny,nz,-vnPre);
+      }
+    }
+  }
+
+  /* ---- Push current particle state into GPU buffers / model matrices ---- */
+  updateRender(){
+    for(const b of this.bodies){
+      if(b.type==='rigid'){
+        // Model matrix from the matched rotation + current centre of mass.
+        const R=quatToMat3(b.cluster.quat);
+        b.mesh.model=m4fromRT(R,[b.cluster.com[0],b.cluster.com[1],b.cluster.com[2]]);
+        b.mesh.normalMat=R;
+      } else {
+        // Soft: copy particle positions to render verts, recompute smooth normals.
+        const m=b.mesh, vmap=m.vmap, tri=m.tri, nv=vmap.length;
+        const P=new Float32Array(nv*3), Nr=new Float32Array(nv*3);
+        for(let v=0;v<nv;v++){const i=vmap[v];P[v*3]=this.px[i];P[v*3+1]=this.py[i];P[v*3+2]=this.pz[i];}
+        for(let t=0;t<tri.length;t+=3){
+          const a=tri[t],bb=tri[t+1],cc=tri[t+2];
+          const ax=P[a*3],ay=P[a*3+1],az=P[a*3+2];
+          const e1x=P[bb*3]-ax,e1y=P[bb*3+1]-ay,e1z=P[bb*3+2]-az;
+          const e2x=P[cc*3]-ax,e2y=P[cc*3+1]-ay,e2z=P[cc*3+2]-az;
+          const nx=e1y*e2z-e1z*e2y,ny=e1z*e2x-e1x*e2z,nz=e1x*e2y-e1y*e2x;
+          Nr[a*3]+=nx;Nr[a*3+1]+=ny;Nr[a*3+2]+=nz;
+          Nr[bb*3]+=nx;Nr[bb*3+1]+=ny;Nr[bb*3+2]+=nz;
+          Nr[cc*3]+=nx;Nr[cc*3+1]+=ny;Nr[cc*3+2]+=nz;
+        }
+        const inter=m.interleaved;
+        for(let v=0;v<nv;v++){
+          const l=Math.hypot(Nr[v*3],Nr[v*3+1],Nr[v*3+2])||1;
+          inter[v*6]=P[v*3];inter[v*6+1]=P[v*3+1];inter[v*6+2]=P[v*3+2];
+          inter[v*6+3]=Nr[v*3]/l;inter[v*6+4]=Nr[v*3+1]/l;inter[v*6+5]=Nr[v*3+2]/l;
+        }
+        GL.gl.bindBuffer(GL.gl.ARRAY_BUFFER,m.vbo);
+        GL.gl.bufferSubData(GL.gl.ARRAY_BUFFER,0,inter);
+        m.model=m4identity(); m.normalMat=new Float32Array([1,0,0,0,1,0,0,0,1]);
+      }
+    }
+  }
+  // Bounding sphere of a body (for ray-picking).
+  bodySphere(b){
+    let cx=0,cy=0,cz=0;const n=b.pIndices.length;
+    for(const i of b.pIndices){cx+=this.px[i];cy+=this.py[i];cz+=this.pz[i];}
+    cx/=n;cy/=n;cz/=n; let r=0;
+    for(const i of b.pIndices){const d=Math.hypot(this.px[i]-cx,this.py[i]-cy,this.pz[i]-cz)+this.rad[i];if(d>r)r=d;}
+    return {c:[cx,cy,cz],r};
+  }
+}
+
+/* =====================================================================================
+   RENDERER — WebGL2 setup, shaders, meshes, shadow map.
+   ===================================================================================== */
+const GL={
+  gl:null,canvas:null,prog:null,depthProg:null,lineProg:null,sparkProg:null,
+  shadowFBO:null,shadowTex:null,SHADOW:2048,ground:null,
+  init(canvas){
+    this.canvas=canvas;
+    const gl=canvas.getContext('webgl2',{antialias:true,alpha:false});
+    if(!gl){alert('WebGL2 is required but not available in this browser.');throw new Error('no webgl2');}
+    this.gl=gl;
+    gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+    this.buildShaders(); this.buildShadow(); this.buildGround();
+  },
+  compile(type,src){const gl=this.gl,s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s)+'\n'+src);return s;},
+  link(vs,fs){const gl=this.gl,p=gl.createProgram();
+    gl.attachShader(p,this.compile(gl.VERTEX_SHADER,vs));gl.attachShader(p,this.compile(gl.FRAGMENT_SHADER,fs));
+    gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));
+    return p;},
+  buildShaders(){
+    const gl=this.gl;
+    /* ---------------- Main lit + shadowed shader ---------------- */
+    const mainVS=`#version 300 es
+    layout(location=0) in vec3 aPos;
+    layout(location=1) in vec3 aNormal;
+    uniform mat4 uViewProj, uModel, uLightVP;
+    uniform mat3 uNormalMat;
+    out vec3 vWorld; out vec3 vN; out vec4 vLS;
+    void main(){
+      vec4 w = uModel*vec4(aPos,1.0);
+      vWorld = w.xyz;
+      vN = uNormalMat*aNormal;
+      vLS = uLightVP*w;                 // position in light clip space (for shadows)
+      gl_Position = uViewProj*w;
+    }`;
+    const mainFS=`#version 300 es
+    precision highp float;
+    in vec3 vWorld; in vec3 vN; in vec4 vLS;
+    uniform vec3 uLightDir;             // direction TOWARD the light (normalized)
+    uniform vec3 uViewPos, uColor;
+    uniform sampler2D uShadow;
+    uniform float uUseShadow, uGround;
+    out vec4 frag;
+    // Percentage-closer filtered shadow lookup (returns 0=lit .. 1=shadowed).
+    float shadow(vec4 ls, vec3 N, vec3 L){
+      vec3 p = ls.xyz/ls.w; p = p*0.5+0.5;
+      if(p.z>1.0||p.x<0.0||p.x>1.0||p.y<0.0||p.y>1.0) return 0.0;
+      float bias = max(0.0030*(1.0-dot(N,L)), 0.0009);
+      float cur = p.z - bias, sum=0.0;
+      vec2 tx = 1.0/vec2(textureSize(uShadow,0));
+      for(int x=-1;x<=1;x++) for(int y=-1;y<=1;y++)
+        sum += cur > texture(uShadow, p.xy+vec2(float(x),float(y))*tx).r ? 1.0 : 0.0;
+      return sum/9.0;
+    }
+    void main(){
+      vec3 N=normalize(vN), L=normalize(uLightDir), Vv=normalize(uViewPos-vWorld);
+      vec3 H=normalize(L+Vv);
+      float diff=max(dot(N,L),0.0);
+      float spec=(diff>0.0)?pow(max(dot(N,H),0.0),48.0):0.0;
+      // Procedural floor grid for depth perception.
+      vec3 base=uColor;
+      if(uGround>0.5){
+        vec2 g=abs(fract(vWorld.xz)-0.5);
+        float line=step(0.485,max(g.x,g.y));            // thin grid lines
+        float maj=step(0.49,max(abs(fract(vWorld.xz*0.2)-0.5).x,abs(fract(vWorld.xz*0.2)-0.5).y));
+        base=mix(uColor, uColor*1.7, line);
+        base=mix(base, vec3(0.32,0.45,0.62), maj*0.5);
+      }
+      float sh = uUseShadow>0.5 ? shadow(vLS,N,L) : 0.0;
+      vec3 amb = base*0.30 + vec3(0.04,0.05,0.07);       // ambient + tiny sky tint
+      float rim = pow(1.0-max(dot(N,Vv),0.0),3.0)*0.25;  // subtle rim light
+      vec3 col = amb + (1.0-sh)*(base*diff + vec3(0.85)*spec*0.6) + base*rim;
+      col = col/(col+vec3(1.0));                         // Reinhard tone-map
+      col = pow(col, vec3(1.0/2.2));                     // gamma
+      frag = vec4(col,1.0);
+    }`;
+    this.prog=this.link(mainVS,mainFS);
+    this.u={};
+    for(const n of ['uViewProj','uModel','uLightVP','uNormalMat','uLightDir','uViewPos','uColor','uShadow','uUseShadow','uGround'])
+      this.u[n]=gl.getUniformLocation(this.prog,n);
+    /* ---------------- Depth-only shader (renders the shadow map) ---------------- */
+    const dVS=`#version 300 es
+    layout(location=0) in vec3 aPos; uniform mat4 uLightVP,uModel;
+    void main(){ gl_Position=uLightVP*uModel*vec4(aPos,1.0); }`;
+    const dFS=`#version 300 es
+    precision highp float; void main(){}`;
+    this.depthProg=this.link(dVS,dFS);
+    this.du={uLightVP:gl.getUniformLocation(this.depthProg,'uLightVP'),
+             uModel:gl.getUniformLocation(this.depthProg,'uModel')};
+
+    /* ---------------- Flat line shader (wireframe overlay) ---------------- */
+    const lVS=`#version 300 es
+    layout(location=0) in vec3 aPos; uniform mat4 uViewProj,uModel;
+    void main(){ gl_Position=uViewProj*uModel*vec4(aPos,1.0); }`;
+    const lFS=`#version 300 es
+    precision highp float; uniform vec3 uColor; out vec4 frag;
+    void main(){ frag=vec4(uColor,1.0); }`;
+    this.lineProg=this.link(lVS,lFS);
+    this.lu={uViewProj:gl.getUniformLocation(this.lineProg,'uViewProj'),
+             uModel:gl.getUniformLocation(this.lineProg,'uModel'),
+             uColor:gl.getUniformLocation(this.lineProg,'uColor')};
+
+    /* ---------------- Spark point shader (additive impact particles) ---------------- */
+    const sVS=`#version 300 es
+    layout(location=0) in vec3 aPos; layout(location=1) in float aLife;
+    uniform mat4 uViewProj; out float vLife;
+    void main(){ vLife=aLife; gl_Position=uViewProj*vec4(aPos,1.0);
+      gl_PointSize=mix(1.5,9.0,aLife); }`;
+    const sFS=`#version 300 es
+    precision highp float; in float vLife; out vec4 frag;
+    void main(){ vec2 c=gl_PointCoord-0.5; float d=length(c); if(d>0.5)discard;
+      float a=vLife*(1.0-d*2.0); frag=vec4(mix(vec3(1.0,0.55,0.2),vec3(1.0,0.95,0.7),vLife),a); }`;
+    this.sparkProg=this.link(sVS,sFS);
+    this.su={uViewProj:gl.getUniformLocation(this.sparkProg,'uViewProj')};
+  },
+  // Depth texture + framebuffer for shadow mapping.
+  buildShadow(){
+    const gl=this.gl,S=this.SHADOW;
+    this.shadowTex=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D,this.shadowTex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.DEPTH_COMPONENT24,S,S,0,gl.DEPTH_COMPONENT,gl.UNSIGNED_INT,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    this.shadowFBO=gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER,this.shadowFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.TEXTURE_2D,this.shadowTex,0);
+    gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);   // depth-only FBO
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  },
+  // Build edge index list (unique edges) from a triangle index list — used for wireframe.
+  edges(tri){
+    const seen=new Set(), e=[];
+    const add=(a,b)=>{const k=a<b?a*1e6+b:b*1e6+a;if(seen.has(k))return;seen.add(k);e.push(a,b);};
+    for(let i=0;i<tri.length;i+=3){add(tri[i],tri[i+1]);add(tri[i+1],tri[i+2]);add(tri[i+2],tri[i]);}
+    return new Uint16Array(e);
+  },
+  // Create a mesh: interleaved [pos(3),normal(3)] VBO, triangle + edge index buffers, two VAOs.
+  makeMesh(pos,nor,tri,dynamic){
+    const gl=this.gl, nv=pos.length/3, inter=new Float32Array(nv*6);
+    for(let v=0;v<nv;v++){inter[v*6]=pos[v*3];inter[v*6+1]=pos[v*3+1];inter[v*6+2]=pos[v*3+2];
+      inter[v*6+3]=nor[v*3];inter[v*6+4]=nor[v*3+1];inter[v*6+5]=nor[v*3+2];}
+    const vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+    gl.bufferData(gl.ARRAY_BUFFER,inter,dynamic?gl.DYNAMIC_DRAW:gl.STATIC_DRAW);
+    const ibo=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(tri),gl.STATIC_DRAW);
+    const edge=this.edges(tri), ebo=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ebo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,edge,gl.STATIC_DRAW);
+    // VAO for filled triangles
+    const vaoFill=gl.createVertexArray(); gl.bindVertexArray(vaoFill);
+    gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,24,0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,24,12);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);
+    // VAO for wireframe edges (shares the same VBO)
+    const vaoEdge=gl.createVertexArray(); gl.bindVertexArray(vaoEdge);
+    gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,24,0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ebo);
+    gl.bindVertexArray(null);
+    return {vbo,ibo,ebo,vaoFill,vaoEdge,triCount:tri.length,edgeCount:edge.length,
+      interleaved:inter,model:m4identity(),normalMat:new Float32Array([1,0,0,0,1,0,0,0,1])};
+  },
+  buildGround(){
+    const G=40;
+    const pos=[-G,0,-G, G,0,-G, G,0,G, -G,0,G];
+    const nor=[0,1,0, 0,1,0, 0,1,0, 0,1,0];
+    const tri=[0,1,2, 0,2,3];
+    this.ground=this.makeMesh(new Float32Array(pos),new Float32Array(nor),tri,false);
+  },
+  resize(){
+    const gl=this.gl, dpr=Math.min(window.devicePixelRatio||1,1.75);
+    const w=Math.floor(innerWidth*dpr), h=Math.floor(innerHeight*dpr);
+    if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}
+  }
+};
+
+/* ============================ impact spark system ============================ */
+const Sparks={
+  MAX:700, x:null,y:null,z:null,vx:null,vy:null,vz:null,life:null,max:null,head:0,vbo:null,vao:null,
+  init(){
+    this.x=new Float32Array(this.MAX);this.y=new Float32Array(this.MAX);this.z=new Float32Array(this.MAX);
+    this.vx=new Float32Array(this.MAX);this.vy=new Float32Array(this.MAX);this.vz=new Float32Array(this.MAX);
+    this.life=new Float32Array(this.MAX);this.max=new Float32Array(this.MAX);
+    const gl=GL.gl; this.buf=new Float32Array(this.MAX*4);
+    this.vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);
+    gl.bufferData(gl.ARRAY_BUFFER,this.buf,gl.DYNAMIC_DRAW);
+    this.vao=gl.createVertexArray(); gl.bindVertexArray(this.vao);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,16,0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,1,gl.FLOAT,false,16,12);
+    gl.bindVertexArray(null);
+  },
+  // Emit a small burst at a contact point; count/speed scale with impact strength.
+  burst(x,y,z,nx,ny,nz,strength){
+    const n=Math.min(10,2+(strength*0.6)|0);
+    for(let k=0;k<n;k++){
+      const i=this.head; this.head=(this.head+1)%this.MAX;
+      const sp=Math.min(8,strength*0.5)*(0.4+Math.random()*0.9);
+      // random hemisphere around the contact normal
+      const rx=(Math.random()-0.5),ry=(Math.random()-0.5),rz=(Math.random()-0.5);
+      this.x[i]=x;this.y[i]=y;this.z[i]=z;
+      this.vx[i]=(nx*0.6+rx)*sp; this.vy[i]=(ny*0.6+ry)*sp+1.0; this.vz[i]=(nz*0.6+rz)*sp;
+      this.max[i]=this.life[i]=0.35+Math.random()*0.4;
+    }
+  },
+  update(dt){
+    for(let i=0;i<this.MAX;i++){
+      if(this.life[i]<=0)continue;
+      this.life[i]-=dt;
+      this.vy[i]-=18*dt;                          // sparks fall under gravity
+      this.x[i]+=this.vx[i]*dt;this.y[i]+=this.vy[i]*dt;this.z[i]+=this.vz[i]*dt;
+      if(this.y[i]<0){this.y[i]=0;this.vy[i]*=-0.3;this.vx[i]*=0.6;this.vz[i]*=0.6;}
+    }
+  },
+  draw(viewProj){
+    const gl=GL.gl; let n=0;
+    for(let i=0;i<this.MAX;i++){ if(this.life[i]<=0)continue;
+      this.buf[n*4]=this.x[i];this.buf[n*4+1]=this.y[i];this.buf[n*4+2]=this.z[i];
+      this.buf[n*4+3]=Math.max(0,this.life[i]/this.max[i]); n++; }
+    if(n===0)return;
+    gl.useProgram(GL.sparkProg); gl.uniformMatrix4fv(GL.su.uViewProj,false,viewProj);
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo); gl.bufferSubData(gl.ARRAY_BUFFER,0,this.buf.subarray(0,n*4));
+    gl.bindVertexArray(this.vao);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE); gl.depthMask(false);
+    gl.drawArrays(gl.POINTS,0,n);
+    gl.depthMask(true); gl.disable(gl.BLEND); gl.bindVertexArray(null);
+  }
+};
+
+/* ============================ camera + input ============================ */
+const cam={yaw:0.7,pitch:0.45,dist:20,target:[0,3,0],eye:[0,0,0]};
+const grab={body:null,target:[0,0,0],last:[0,0,0],vel:[0,0,0]};
+let camViewProj=m4identity(), mouseDown=false, dragMode=null, lastX=0,lastY=0, lastNDC=[0,0];
+function camEye(){
+  const cp=Math.cos(cam.pitch),sp=Math.sin(cam.pitch),cy=Math.cos(cam.yaw),sy=Math.sin(cam.yaw);
+  cam.eye=[cam.target[0]+cam.dist*cp*cy, cam.target[1]+cam.dist*sp, cam.target[2]+cam.dist*cp*sy];
+  return cam.eye;
+}
+// Build a world-space ray from the current mouse NDC.
+function mouseRay(ndcx,ndcy){
+  const inv=m4invert(camViewProj);
+  const a=m4mulVec4(inv,[ndcx,ndcy,-1,1]), b=m4mulVec4(inv,[ndcx,ndcy,1,1]);
+  const o=[a[0]/a[3],a[1]/a[3],a[2]/a[3]], f=[b[0]/b[3],b[1]/b[3],b[2]/b[3]];
+  return {o,d:V.norm(V.sub(f,o))};
+}
+function raySphere(o,d,c,r){
+  const oc=V.sub(o,c), b=V.dot(oc,d), cc=V.dot(oc,oc)-r*r, disc=b*b-cc;
+  if(disc<0)return -1; const s=Math.sqrt(disc); let t=-b-s; if(t<0)t=-b+s; return t<0?-1:t;
+}
+
+/* ============================ scene presets ============================ */
+const PAL=[[0.96,0.45,0.38],[0.40,0.78,0.95],[0.62,0.85,0.45],[0.95,0.80,0.36],
+  [0.74,0.55,0.95],[0.40,0.90,0.78],[0.95,0.62,0.78],[0.55,0.70,1.00]];
+let world=null, currentPreset='rigid';
+function loadPreset(name){
+  currentPreset=name;
+  world=new World();
+  if(name==='rigid'){
+    UI.set('stiff',1.0); UI.set('damp',0.04); UI.set('fric',0.7); UI.set('rest',0.18);
+    // A tall, slightly-leaning tower of irregular gems — knock it over by flinging one.
+    let ci=0;
+    for(let i=0;i<8;i++){
+      const off=(i%2?0.08:-0.08);
+      world.addRigid(makeGem(0.85,i*1.7),[off, 1.0+i*1.18, off*0.5],PAL[ci++%PAL.length]);
+    }
+    // a couple of loose gems on the ground nearby
+    world.addRigid(makeGem(0.9,11),[-3.5,1.1,1.5],PAL[ci++%PAL.length]);
+    world.addRigid(makeGem(0.8,13),[3.2,1.0,-1.8],PAL[ci++%PAL.length]);
+    cam.target=[0,4.5,0]; cam.dist=22;
+  }
+  else if(name==='soft'){
+    UI.set('stiff',0.35); UI.set('damp',0.06); UI.set('fric',0.6); UI.set('rest',0.05);
+    let ci=0;
+    const spots=[[-2.5,4,0],[0,6,0.5],[2.5,4.5,-0.5],[-1.2,8,1.5],[1.4,9.5,-1.2],[0,3,-2.5]];
+    for(let i=0;i<spots.length;i++)
+      world.addSoft(0.9+Math.random()*0.35, spots[i], PAL[ci++%PAL.length], null, i*2.3);
+    cam.target=[0,2.5,0]; cam.dist=15;
+  }
+  else { // destruction
+    UI.set('stiff',1.0); UI.set('damp',0.03); UI.set('fric',0.6); UI.set('rest',0.1);
+    // For destruction, auto-weld touching chunks and drop a heavy wrecking ball.
+    rebuildDestructWithBall();
+    return;
+  }
+  world.finalize();
+  document.getElementById('pcount').textContent=world.N;
+}
+// Rebuild destruction scene including a fast wrecking ball (kept separate for clarity).
+function rebuildDestructWithBall(){
+  world=new World();
+  const half=0.5, gap=0.06, step=half*2+gap;
+  const cols=5, rows=4, x0=-(cols-1)*step/2;
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    const x=x0+c*step, y=half+r*step;
+    world.addRigid(makeCube(half),[x,y,0],PAL[(r*cols+c)%PAL.length]);
+  }
+  // wrecking ball with strong downward + forward velocity
+  world.addRigid(makeGem(1.1,99),[0,8.5,-4.0],[1,1,1],[0,-8,9]);
+  world.finalize();
+  const N=world.N;
+  for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
+    if(world.body[i]===world.body[j])continue;
+    const d=Math.hypot(world.px[i]-world.px[j],world.py[i]-world.py[j],world.pz[i]-world.pz[j]);
+    if(d>0.001 && d<0.32) world.addWeld(i,j);
+  }
+  cam.target=[0,2.2,0]; cam.dist=15;
+  document.getElementById('pcount').textContent=world.N;
+}
+
+/* ============================ UI wiring ============================ */
+const params={grav:12,stiff:1,damp:0.04,fric:0.65,rest:0.12};
+let paused=false, wireframe=false, useShadow=true;
+const UI={
+  el:{}, set(name,val){ // programmatically set a slider + label
+    const map={grav:['sGrav','vGrav',1],stiff:['sStiff','vStiff',2],damp:['sDamp','vDamp',2],
+      fric:['sFric','vFric',2],rest:['sRest','vRest',2]};
+    const [sid,vid,dp]=map[name]; const s=document.getElementById(sid);
+    s.value=val; document.getElementById(vid).textContent=Number(val).toFixed(dp);
+    params[name]=Number(val);
+  }
+};
+function bindSlider(id,vid,key,dp){
+  const s=document.getElementById(id),v=document.getElementById(vid);
+  const upd=()=>{params[key]=parseFloat(s.value);v.textContent=params[key].toFixed(dp);};
+  s.addEventListener('input',upd); upd();
+}
+bindSlider('sGrav','vGrav','grav',1);
+bindSlider('sStiff','vStiff','stiff',2);
+bindSlider('sDamp','vDamp','damp',2);
+bindSlider('sFric','vFric','fric',2);
+bindSlider('sRest','vRest','rest',2);
+document.querySelectorAll('.preset').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.preset').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    loadPreset(b.dataset.preset);
+  });
+});
+document.querySelector('.preset[data-preset="rigid"]').classList.add('active');
+const bPlay=document.getElementById('bPlay');
+bPlay.addEventListener('click',()=>{paused=!paused;
+  bPlay.textContent=paused?'▶ Play':'⏸ Pause'; bPlay.classList.toggle('active',!paused);
+  document.getElementById('cstate').textContent=paused?'paused':'running';});
+const bWire=document.getElementById('bWire');
+bWire.addEventListener('click',()=>{wireframe=!wireframe;bWire.classList.toggle('active',wireframe);});
+const bShadow=document.getElementById('bShadow');
+bShadow.addEventListener('click',()=>{useShadow=!useShadow;bShadow.classList.toggle('active',useShadow);});
+document.getElementById('bReset').addEventListener('click',()=>loadPreset(currentPreset));
+window.addEventListener('keydown',e=>{
+  if(e.code==='Space'){e.preventDefault();bPlay.click();}
+  else if(e.key==='w'||e.key==='W'){bWire.click();}
+  else if(e.key==='r'||e.key==='R'){loadPreset(currentPreset);}
+});
+
+/* ---- pointer: orbit empty space, grab+throw bodies ---- */
+const canvas=document.getElementById('gl');
+function ndc(e){const r=canvas.getBoundingClientRect();
+  return [ (e.clientX-r.left)/r.width*2-1, -((e.clientY-r.top)/r.height*2-1) ];}
+canvas.addEventListener('pointerdown',e=>{
+  canvas.setPointerCapture(e.pointerId);
+  mouseDown=true; lastX=e.clientX; lastY=e.clientY;
+  const n=ndc(e); lastNDC=n;
+  const ray=mouseRay(n[0],n[1]);
+  // pick nearest body whose bounding sphere the ray hits
+  let bestT=1e9,bestBody=null;
+  for(const b of world.bodies){const s=world.bodySphere(b);const t=raySphere(ray.o,ray.d,s.c,s.r);
+    if(t>0&&t<bestT){bestT=t;bestBody=b;}}
+  if(bestBody){
+    dragMode='grab'; grab.body=bestBody; canvas.classList.add('grabbing');
+    const s=world.bodySphere(bestBody);
+    grab.target=s.c.slice(); grab.last=s.c.slice(); grab.vel=[0,0,0];
+  } else dragMode='orbit';
+});
+canvas.addEventListener('pointermove',e=>{
+  if(!mouseDown)return;
+  const n=ndc(e);
+  if(dragMode==='orbit'){
+    cam.yaw+=(e.clientX-lastX)*0.008;
+    cam.pitch=Math.max(-1.4,Math.min(1.4,cam.pitch-(e.clientY-lastY)*0.008));
+    lastX=e.clientX;lastY=e.clientY;
+  }
+  lastNDC=n; // grab target recomputed each frame from this NDC
+});
+function endDrag(){
+  if(dragMode==='grab'&&grab.body){
+    // Fling: hand the tracked mouse-target velocity to all the body's particles.
+    const v=grab.vel, sp=Math.hypot(v[0],v[1],v[2]); const cap=sp>40?40/sp:1;
+    for(const i of grab.body.pIndices){world.vx[i]=v[0]*cap;world.vy[i]=v[1]*cap;world.vz[i]=v[2]*cap;}
+  }
+  grab.body=null; dragMode=null; mouseDown=false; canvas.classList.remove('grabbing');
+}
+canvas.addEventListener('pointerup',endDrag);
+canvas.addEventListener('pointercancel',endDrag);
+canvas.addEventListener('wheel',e=>{e.preventDefault();
+  cam.dist=Math.max(6,Math.min(45,cam.dist*(1+Math.sign(e.deltaY)*0.08)));},{passive:false});
+
+/* ============================ render frame ============================ */
+function renderScene(){
+  const gl=GL.gl;
+  // ---- camera matrices ----
+  const eye=camEye();
+  const aspect=GL.canvas.width/GL.canvas.height;
+  const proj=m4perspective(60*Math.PI/180,aspect,0.1,200);
+  const view=m4lookAt(eye,cam.target,[0,1,0]);
+  camViewProj=m4mul(proj,view);
+  // ---- light + shadow matrices (directional light framed over the scene) ----
+  const lightTravel=V.norm([-0.45,-1.0,-0.35]);          // direction light travels
+  const lightDir=V.scale(lightTravel,-1);                // toward the light (for shading)
+  const lc=[0,3,0], lEye=V.sub(lc,V.scale(lightTravel,28));
+  const lightView=m4lookAt(lEye,lc,[0,1,0]);
+  const lightProj=m4ortho(-18,18,-18,18,1,60);
+  const lightVP=m4mul(lightProj,lightView);
+  // ---- PASS 1: render depth into the shadow map ----
+  if(useShadow){
+    gl.bindFramebuffer(gl.FRAMEBUFFER,GL.shadowFBO);
+    gl.viewport(0,0,GL.SHADOW,GL.SHADOW);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.useProgram(GL.depthProg);
+    gl.uniformMatrix4fv(GL.du.uLightVP,false,lightVP);
+    for(const b of world.bodies){
+      gl.uniformMatrix4fv(GL.du.uModel,false,b.mesh.model);
+      gl.bindVertexArray(b.mesh.vaoFill);
+      gl.drawElements(gl.TRIANGLES,b.mesh.triCount,gl.UNSIGNED_SHORT,0);
+    }
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  }
+  // ---- PASS 2: main lit scene ----
+  gl.viewport(0,0,GL.canvas.width,GL.canvas.height);
+  gl.clearColor(0.05,0.06,0.09,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(GL.prog);
+  gl.uniformMatrix4fv(GL.u.uViewProj,false,camViewProj);
+  gl.uniformMatrix4fv(GL.u.uLightVP,false,lightVP);
+  gl.uniform3fv(GL.u.uLightDir,lightDir);
+  gl.uniform3fv(GL.u.uViewPos,eye);
+  gl.uniform1f(GL.u.uUseShadow,useShadow?1:0);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,GL.shadowTex);
+  gl.uniform1i(GL.u.uShadow,0);
+  // ground
+  gl.uniformMatrix4fv(GL.u.uModel,false,GL.ground.model);
+  gl.uniformMatrix3fv(GL.u.uNormalMat,false,GL.ground.normalMat);
+  gl.uniform3f(GL.u.uColor,0.14,0.17,0.23); gl.uniform1f(GL.u.uGround,1);
+  gl.bindVertexArray(GL.ground.vaoFill);
+  gl.drawElements(gl.TRIANGLES,GL.ground.triCount,gl.UNSIGNED_SHORT,0);
+  // bodies (filled). When wireframe is on we push fills back so edges sit on top.
+  if(wireframe){gl.enable(gl.POLYGON_OFFSET_FILL);gl.polygonOffset(1.0,1.0);}
+  gl.uniform1f(GL.u.uGround,0);
+  for(const b of world.bodies){
+    gl.uniformMatrix4fv(GL.u.uModel,false,b.mesh.model);
+    gl.uniformMatrix3fv(GL.u.uNormalMat,false,b.mesh.normalMat);
+    gl.uniform3fv(GL.u.uColor,b.color);
+    gl.bindVertexArray(b.mesh.vaoFill);
+    gl.drawElements(gl.TRIANGLES,b.mesh.triCount,gl.UNSIGNED_SHORT,0);
+  }
+  if(wireframe){
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    gl.useProgram(GL.lineProg);
+    gl.uniformMatrix4fv(GL.lu.uViewProj,false,camViewProj);
+    gl.uniform3f(GL.lu.uColor,0.95,0.97,1.0);
+    for(const b of world.bodies){
+      gl.uniformMatrix4fv(GL.lu.uModel,false,b.mesh.model);
+      gl.bindVertexArray(b.mesh.vaoEdge);
+      gl.drawElements(gl.LINES,b.mesh.edgeCount,gl.UNSIGNED_SHORT,0);
+    }
+  }
+  gl.bindVertexArray(null);
+  // sparks last (additive, no depth write)
+  Sparks.draw(camViewProj);
+}
+
+/* ============================ main loop ============================ */
+let last=performance.now(), fpsAcc=0, fpsCount=0, fpsShown=60;
+function frame(now){
+  const dt=Math.min((now-last)/1000,0.05); last=now;
+  // While grabbing: project the mouse ray onto a plane facing the camera through the
+  // body's centre, giving a world-space target the grab constraint pulls toward.
+  if(grab.body){
+    const ray=mouseRay(lastNDC[0],lastNDC[1]);
+    const camF=V.norm(V.sub(cam.target,cam.eye));
+    const s=world.bodySphere(grab.body);
+    const denom=V.dot(ray.d,camF);
+    if(Math.abs(denom)>1e-4){
+      const t=V.dot(V.sub(s.c,ray.o),camF)/denom;
+      const tgt=V.add(ray.o,V.scale(ray.d,t));
+      grab.last=grab.target.slice(); grab.target=tgt;
+      const idt=dt>1e-4?1/dt:0;
+      // exponential smoothing of throw velocity
+      grab.vel=[ grab.vel[0]*0.5+(grab.target[0]-grab.last[0])*idt*0.5,
+                 grab.vel[1]*0.5+(grab.target[1]-grab.last[1])*idt*0.5,
+                 grab.vel[2]*0.5+(grab.target[2]-grab.last[2])*idt*0.5 ];
+    }
+  }
+  if(!paused) world.step(dt,params);
+  world.updateRender();
+  Sparks.update(dt);
+  GL.resize();
+  renderScene();
+  // FPS counter (smoothed over ~0.5s)
+  fpsAcc+=dt; fpsCount++;
+  if(fpsAcc>=0.5){fpsShown=Math.round(fpsCount/fpsAcc);fpsAcc=0;fpsCount=0;
+    document.getElementById('fps').textContent=fpsShown;}
+  requestAnimationFrame(frame);
+}
+
+/* ============================ boot ============================ */
+GL.init(canvas);
+Sparks.init();
+GL.resize();
+loadPreset('rigid');
+window.addEventListener('resize',GL.resize.bind(GL));
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
