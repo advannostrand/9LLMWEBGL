@@ -212,7 +212,8 @@ one-shot-physics-benchmark/
 
 **Adam Van Nostrand** · Independent Researcher · Columbia, SC · Blencowe IT
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=flat-square&logo=linkedin&logoColor=white)](https://linkedin.com/in/YOUR_HANDLE)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=flat-square&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/adam-van-nostrand-5a603424b/)
+[![GitHub](https://img.shields.io/badge/GitHub-advannostrand%2F9LLMWEBGL-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/advannostrand/9LLMWEBGL)
 
 *Evaluated June 10, 2026. No prompt engineering. No follow-ups. No cherry-picking. Open the file.*
 
